@@ -1,0 +1,8 @@
+[
+  {
+    "nome": "camera teste servlink",
+    "camera_id": "",
+    "rtsp_url": "https://live12.analitico.app.br/stream/get/cameramibotes00.m3u8?token=cameramibotes00",
+    "gpu": 0
+  }
+]

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/brand/logo-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f1115" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Corexia" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <title>Corexia — Monitoramento Inteligente</title>
+    <script>
+      // Aplica o tema ANTES de renderizar (evita flash). Dark e o padrao.
+      (function () {
+        try {
+          var t = localStorage.getItem("corexia-theme") || "dark";
+          document.documentElement.setAttribute("data-theme", t);
+          document.documentElement.style.colorScheme = t;
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-CbXWakXZ.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-RQGyW_GL.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

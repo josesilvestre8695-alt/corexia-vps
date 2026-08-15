@@ -1,0 +1,3 @@
+32005|https://live50.analitico.app.br/stream/get/mirantecamerabP00.m3u8?token=mirantecamerabP00
+32006|https://live48.analitico.app.br/stream/get/camera03miran5y00.m3u8?token=camera03miran5y00
+32004|https://live48.analitico.app.br/stream/get/mirantecameraca00.m3u8?token=mirantecameraca00

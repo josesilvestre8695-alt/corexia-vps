@@ -1,0 +1,4 @@
+inference-gpu
+opencv-python
+requests
+python-dotenv

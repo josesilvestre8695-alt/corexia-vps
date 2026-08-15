@@ -1,0 +1,441 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0a0c12"><meta name="description" content="Corexia — vigilância com IA que detecta arma, fogo e intruso em tempo real e alerta no WhatsApp."><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cpath d=%22M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z%22 fill=%22%23f97316%22/%3E%3C/svg%3E"></head><body>
+<title>Corexia — Vigilância Inteligente com IA</title>
+<style>
+  /* ===== Corexia — Landing (command-center, dark, single-world by choice) ===== */
+  :root{
+    --ground:#0a0c12; --ground-2:#0c0f16; --surface:#12151d; --surface-2:#191d27;
+    --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.14);
+    --text:#eceae7; --muted:#878d9b; --muted-2:#5b616f;
+    --accent:#f97316; --accent-2:#ffb066; --accent-dim:rgba(249,115,22,.14);
+    --alert:#ef4444; --alert-dim:rgba(239,68,68,.16); --ok:#34d399;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --maxw:1160px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--ground);color:var(--text);font-family:var(--sans);
+    line-height:1.55;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  a{color:inherit;text-decoration:none}
+  h1,h2,h3{margin:0;text-wrap:balance;letter-spacing:-.02em;font-weight:800;line-height:1.05}
+  p{margin:0}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent-2)}
+  .muted{color:var(--muted)}
+  .mono{font-family:var(--mono)}
+  .btn{display:inline-flex;align-items:center;gap:9px;font-weight:650;font-size:15px;
+    padding:13px 22px;border-radius:13px;border:1px solid transparent;cursor:pointer;transition:.18s;white-space:nowrap}
+  .btn-primary{background:linear-gradient(180deg,var(--accent-2),var(--accent));color:#1a0e02;
+    box-shadow:0 8px 30px -8px rgba(249,115,22,.6),inset 0 1px 0 rgba(255,255,255,.35)}
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 14px 40px -8px rgba(249,115,22,.7)}
+  .btn-ghost{background:var(--surface);border-color:var(--line-2);color:var(--text)}
+  .btn-ghost:hover{border-color:var(--accent);color:var(--accent-2);transform:translateY(-2px)}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:8px}
+
+  /* ambient background */
+  .bg-fx{position:fixed;inset:0;z-index:0;pointer-events:none;
+    background:
+      radial-gradient(60% 45% at 78% -5%,rgba(249,115,22,.14),transparent 60%),
+      radial-gradient(50% 40% at 8% 8%,rgba(59,90,180,.10),transparent 60%);
+    -webkit-mask-image:linear-gradient(180deg,#000,#000 60%,transparent);mask-image:linear-gradient(180deg,#000,#000 60%,transparent)}
+  .grid-fx{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.5;
+    background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+    background-size:56px 56px;
+    -webkit-mask-image:radial-gradient(70% 55% at 50% 0%,#000,transparent 75%);mask-image:radial-gradient(70% 55% at 50% 0%,#000,transparent 75%)}
+
+  /* nav */
+  header.nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);
+    background:rgba(10,12,18,.72);border-bottom:1px solid var(--line)}
+  .nav-in{display:flex;align-items:center;gap:24px;height:66px}
+  .brand{display:flex;align-items:center;gap:11px;font-weight:800;letter-spacing:.02em;font-size:19px}
+  .logo{width:36px;height:36px;display:grid;place-items:center}
+  .logo img{width:100%;height:100%;object-fit:contain}
+  .brand .wx{color:var(--accent)}
+  .nav-links{display:flex;gap:26px;margin-left:14px}
+  .nav-links a{font-size:14.5px;color:var(--muted);transition:.15s}
+  .nav-links a:hover{color:var(--text)}
+  .nav-cta{margin-left:auto;display:flex;gap:12px;align-items:center}
+  @media(max-width:820px){.nav-links{display:none}.nav-cta .btn-ghost{display:none}}
+
+  /* hero */
+  main{position:relative;z-index:1}
+  .hero{padding:74px 0 40px}
+  .hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:52px;align-items:center}
+  @media(max-width:940px){.hero-grid{grid-template-columns:1fr;gap:40px}}
+  .live-tag{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:12px;
+    letter-spacing:.16em;text-transform:uppercase;color:var(--muted);
+    border:1px solid var(--line-2);border-radius:100px;padding:7px 14px;background:var(--surface)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 0 rgba(52,211,153,.6);animation:pulse 2.4s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,211,153,.5)}70%{box-shadow:0 0 0 9px rgba(52,211,153,0)}100%{box-shadow:0 0 0 0 rgba(52,211,153,0)}}
+  .hero h1{font-size:clamp(34px,5.4vw,60px);margin:22px 0 0}
+  .hero h1 .hl{background:linear-gradient(120deg,var(--accent-2),var(--accent));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero .lede{font-size:clamp(16px,2vw,19px);color:var(--muted);max-width:33em;margin-top:20px}
+  .hero-cta{display:flex;gap:14px;margin-top:30px;flex-wrap:wrap}
+  .hero-trust{display:flex;gap:22px;margin-top:30px;flex-wrap:wrap;font-family:var(--mono);font-size:12.5px;color:var(--muted-2)}
+  .hero-trust b{color:var(--text);font-weight:600}
+
+  /* monitor mock */
+  .monitor{position:relative;border-radius:18px;overflow:hidden;border:1px solid var(--line-2);
+    background:linear-gradient(160deg,#161a24,#0c0f16);box-shadow:0 40px 80px -30px rgba(0,0,0,.8)}
+  .mon-bar{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line);
+    font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;color:var(--muted);background:rgba(0,0,0,.25)}
+  .rec{display:inline-flex;align-items:center;gap:6px;color:var(--alert)}
+  .rec i{width:8px;height:8px;border-radius:50%;background:var(--alert);animation:blink 1.4s steps(1) infinite}
+  @keyframes blink{50%{opacity:.25}}
+  .mon-view{position:relative;aspect-ratio:16/10;
+    background:
+      radial-gradient(120% 90% at 30% 20%,rgba(120,140,180,.16),transparent 55%),
+      repeating-linear-gradient(115deg,#0f1420 0 22px,#111725 22px 44px),
+      linear-gradient(180deg,#141a28,#0b0f18)}
+  .mon-view::after{content:"";position:absolute;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(0deg,rgba(0,0,0,.16) 0 1px,transparent 1px 3px);opacity:.5}
+  .scan{position:absolute;left:0;right:0;height:34%;top:-34%;
+    background:linear-gradient(180deg,transparent,rgba(249,115,22,.14),transparent);animation:scan 4.2s linear infinite}
+  @keyframes scan{to{top:120%}}
+  /* fake "figure" + detection box */
+  .figure{position:absolute;left:56%;top:30%;width:20%;height:52%;border-radius:40% 40% 20% 20%/50% 50% 12% 12%;
+    background:linear-gradient(180deg,#39405a,#232838);box-shadow:0 20px 40px -20px #000}
+  .figure::before{content:"";position:absolute;left:22%;top:-16%;width:56%;aspect-ratio:1;border-radius:50%;background:#414965}
+  .det{position:absolute;left:50%;top:24%;width:33%;height:40%;border:2px solid var(--alert);border-radius:4px;
+    box-shadow:0 0 0 1px rgba(0,0,0,.4),0 0 22px rgba(239,68,68,.5);animation:box 2.6s ease-in-out infinite}
+  @keyframes box{0%,100%{opacity:.55;transform:scale(.99)}50%{opacity:1;transform:scale(1.005)}}
+  .det .lbl{position:absolute;top:-25px;left:-2px;font-family:var(--mono);font-size:11px;font-weight:600;
+    background:var(--alert);color:#fff;padding:3px 7px;border-radius:4px;white-space:nowrap;letter-spacing:.04em}
+  .corner{position:absolute;width:16px;height:16px;border:2px solid rgba(249,115,22,.7)}
+  .c1{left:12px;top:12px;border-right:0;border-bottom:0}.c2{right:12px;top:12px;border-left:0;border-bottom:0}
+  .c3{left:12px;bottom:12px;border-right:0;border-top:0}.c4{right:12px;bottom:12px;border-left:0;border-top:0}
+  .mon-hud{position:absolute;left:14px;bottom:12px;font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.75);
+    text-shadow:0 1px 3px #000;letter-spacing:.06em}
+  /* whatsapp alert card */
+  .wa{position:absolute;right:-14px;bottom:34px;width:270px;background:#0f1a14;border:1px solid rgba(52,211,153,.25);
+    border-radius:15px;padding:13px 14px;box-shadow:0 30px 60px -20px rgba(0,0,0,.85);
+    animation:waIn .8s .5s both cubic-bezier(.2,.8,.2,1)}
+  @keyframes waIn{from{opacity:0;transform:translateY(16px) scale(.96)}to{opacity:1;transform:none}}
+  @media(max-width:520px){.wa{right:2px;width:230px}}
+  .wa-top{display:flex;align-items:center;gap:8px;font-size:12px;color:#9fe6c4;font-weight:600}
+  .wa-top .wd{width:9px;height:9px;border-radius:50%;background:var(--ok)}
+  .wa h4{font-size:13.5px;margin:8px 0 3px;color:#fff;font-weight:700}
+  .wa p{font-size:12.5px;color:#a7b0ad}
+  .wa .stamp{font-family:var(--mono);font-size:10.5px;color:#6f7a76;margin-top:7px}
+
+  /* section shell */
+  section{position:relative;padding:78px 0}
+  .sec-head{max-width:640px;margin-bottom:44px}
+  .sec-head h2{font-size:clamp(26px,3.6vw,40px);margin-top:14px}
+  .sec-head p{color:var(--muted);font-size:17px;margin-top:14px}
+  .divider{height:1px;background:linear-gradient(90deg,transparent,var(--line-2),transparent)}
+
+  /* how it works */
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  @media(max-width:820px){.steps{grid-template-columns:1fr}}
+  .step{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:26px;position:relative;overflow:hidden}
+  .step .n{font-family:var(--mono);font-size:13px;color:var(--accent-2);letter-spacing:.1em}
+  .step h3{font-size:19px;margin:16px 0 9px}
+  .step p{color:var(--muted);font-size:14.5px}
+  .step .ico{width:44px;height:44px;border-radius:12px;background:var(--accent-dim);display:grid;place-items:center;margin-bottom:2px}
+  .step:not(:last-child)::after{content:"→";position:absolute;right:-11px;top:50%;color:var(--muted-2);font-size:22px;z-index:2}
+  @media(max-width:820px){.step:not(:last-child)::after{display:none}}
+
+  /* features */
+  .feat{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  @media(max-width:900px){.feat{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:560px){.feat{grid-template-columns:1fr}}
+  .card{background:linear-gradient(180deg,var(--surface),var(--ground-2));border:1px solid var(--line);
+    border-radius:18px;padding:24px;transition:.2s}
+  .card:hover{border-color:var(--line-2);transform:translateY(-3px);box-shadow:0 24px 50px -30px rgba(0,0,0,.9)}
+  .card .ico{width:46px;height:46px;border-radius:12px;background:var(--accent-dim);display:grid;place-items:center;margin-bottom:16px}
+  .card h3{font-size:17.5px;margin-bottom:8px}
+  .card p{color:var(--muted);font-size:14.5px}
+  .card .tag{font-family:var(--mono);font-size:11px;color:var(--accent-2);letter-spacing:.06em;text-transform:uppercase}
+
+  /* resale flow */
+  .resale{background:
+      radial-gradient(80% 100% at 50% 0%,rgba(249,115,22,.07),transparent 60%);
+    border:1px solid var(--line);border-radius:24px;padding:44px}
+  .flow{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:stretch;gap:16px;margin-top:8px}
+  @media(max-width:820px){.flow{grid-template-columns:1fr}.flow .arrow{display:none}}
+  .tier{background:var(--surface);border:1px solid var(--line-2);border-radius:16px;padding:22px;text-align:left}
+  .tier .role{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent-2)}
+  .tier h3{font-size:19px;margin:10px 0 8px}
+  .tier p{font-size:13.5px;color:var(--muted)}
+  .arrow{display:grid;place-items:center;color:var(--muted-2);font-size:24px}
+
+  /* app / phone */
+  .app-grid{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center}
+  @media(max-width:860px){.app-grid{grid-template-columns:1fr;gap:36px}}
+  .phone{width:270px;margin:0 auto;border-radius:38px;padding:12px;background:linear-gradient(160deg,#20242f,#0b0e15);
+    border:1px solid var(--line-2);box-shadow:0 50px 90px -30px rgba(0,0,0,.85)}
+  .screen{border-radius:28px;overflow:hidden;background:var(--ground);aspect-ratio:9/19;position:relative;border:1px solid var(--line)}
+  .ph-top{display:flex;align-items:center;gap:8px;padding:16px 15px 10px;font-size:13px;font-weight:700}
+  .ph-cams{padding:4px 13px;display:grid;gap:11px}
+  .ph-cam{border-radius:13px;overflow:hidden;border:1px solid var(--line);
+    background:repeating-linear-gradient(120deg,#0f1420 0 18px,#121826 18px 36px);aspect-ratio:16/10;position:relative}
+  .ph-cam .lv{position:absolute;left:8px;top:8px;font-family:var(--mono);font-size:9px;letter-spacing:.1em;
+    color:#fff;background:rgba(239,68,68,.85);padding:2px 6px;border-radius:5px}
+  .ph-cam .nm{position:absolute;left:8px;bottom:7px;font-size:11px;font-weight:600;text-shadow:0 1px 3px #000}
+  .ph-tab{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-around;padding:11px 8px 15px;
+    border-top:1px solid var(--line);background:rgba(10,12,18,.9);backdrop-filter:blur(8px)}
+  .ph-tab span{width:22px;height:22px;border-radius:7px;background:var(--surface-2)}
+  .ph-tab span.on{background:var(--accent);box-shadow:0 4px 12px -2px rgba(249,115,22,.7)}
+  .app-list{display:flex;flex-direction:column;gap:16px;margin-top:22px}
+  .app-list li{list-style:none;display:flex;gap:13px;align-items:flex-start}
+  .app-list .ck{width:26px;height:26px;border-radius:8px;background:var(--accent-dim);color:var(--accent-2);
+    display:grid;place-items:center;flex:0 0 auto;font-weight:800;font-size:15px}
+  .app-list b{font-size:15.5px}.app-list p{color:var(--muted);font-size:14px;margin-top:2px}
+
+  /* stats band */
+  .band{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--ground-2)}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:40px 0}
+  @media(max-width:720px){.stats{grid-template-columns:repeat(2,1fr);gap:26px}}
+  .stat{text-align:center}
+  .stat .v{font-size:clamp(28px,4vw,42px);font-weight:800;font-variant-numeric:tabular-nums;
+    background:linear-gradient(120deg,var(--accent-2),var(--accent));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .stat .k{font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-top:6px}
+
+  /* pricing */
+  .plans{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;align-items:stretch}
+  @media(max-width:820px){.plans{grid-template-columns:1fr}}
+  .plan{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:28px;display:flex;flex-direction:column}
+  .plan.feature{border-color:var(--accent);background:linear-gradient(180deg,rgba(249,115,22,.08),var(--surface));
+    box-shadow:0 30px 70px -40px rgba(249,115,22,.5)}
+  .plan .badge{align-self:flex-start;font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--accent-2);border:1px solid var(--accent);border-radius:100px;padding:4px 10px;margin-bottom:14px}
+  .plan h3{font-size:20px}
+  .plan .price{margin:14px 0;font-size:15px;color:var(--muted)}
+  .plan .price b{font-size:30px;color:var(--text);font-weight:800}
+  .plan ul{list-style:none;padding:0;margin:8px 0 22px;display:flex;flex-direction:column;gap:11px}
+  .plan li{font-size:14px;color:var(--muted);display:flex;gap:9px;align-items:flex-start}
+  .plan li::before{content:"✓";color:var(--accent-2);font-weight:800}
+  .plan .btn{margin-top:auto;justify-content:center}
+
+  /* final cta */
+  .final{text-align:center;padding:96px 0}
+  .final h2{font-size:clamp(28px,4.4vw,48px)}
+  .final p{color:var(--muted);font-size:18px;margin:18px auto 0;max-width:34em}
+  .final .hero-cta{justify-content:center;margin-top:32px}
+
+  footer{border-top:1px solid var(--line);padding:40px 0;color:var(--muted-2)}
+  .foot{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;align-items:center;font-size:14px}
+  .foot a{color:var(--muted)}.foot a:hover{color:var(--text)}
+
+  .reveal{opacity:0;transform:translateY(22px);transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1)}
+  .reveal.in{opacity:1;transform:none}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important}.reveal{opacity:1;transform:none;transition:none}.scan{display:none}}
+
+  svg.i{width:22px;height:22px;stroke:var(--accent-2);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .step .ico svg.i,.card .ico svg.i{width:24px;height:24px}
+</style>
+
+<div class="bg-fx"></div><div class="grid-fx"></div>
+
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="#top">
+      <span class="logo"><img src="/brand/logo-icon.png" alt="Corexia"></span>
+      CORE<span class="wx">X</span>IA<span class="wx">.</span>
+    </a>
+    <nav class="nav-links">
+      <a href="#recursos">Recursos</a>
+      <a href="#como">Como funciona</a>
+      <a href="#revenda">Revenda</a>
+      <a href="#planos">Planos</a>
+    </nav>
+    <div class="nav-cta">
+      <a class="btn btn-ghost" href="#planos">Falar com a gente</a>
+      <a class="btn btn-primary" href="#entrar">Entrar</a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+  <!-- HERO -->
+  <section class="hero"><div class="wrap hero-grid">
+    <div>
+      <span class="live-tag"><span class="dot"></span> Sistema ativo · Vigilância com IA</span>
+      <h1>A vigilância que <span class="hl">enxerga a ameaça</span> — e avisa antes que aconteça.</h1>
+      <p class="lede">A Corexia analisa cada câmera com inteligência artificial em tempo real. Detectou arma, fogo ou intruso? O alerta cai no seu WhatsApp e no painel na hora — com a foto e a câmera exata.</p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="#planos">Proteger minhas câmeras
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#1a0e02" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+        <a class="btn btn-ghost" href="#como">Ver como funciona</a>
+      </div>
+      <div class="hero-trust">
+        <span><b>&lt; 2s</b> pra alertar</span>
+        <span><b>Arma · Fogo · Intruso</b></span>
+        <span><b>Câmeras ilimitadas</b></span>
+        <span><b>24/7</b> sem piscar</span>
+      </div>
+    </div>
+
+    <div class="monitor reveal">
+      <div class="mon-bar">
+        <span class="rec"><i></i>REC</span>
+        <span>CAM 07 · RUA CENTRAL</span>
+        <span style="margin-left:auto">IA · ATIVA</span>
+      </div>
+      <div class="mon-view">
+        <div class="scan"></div>
+        <div class="figure"></div>
+        <div class="det"><span class="lbl">ARMA DE FOGO · 94%</span></div>
+        <span class="corner c1"></span><span class="corner c2"></span><span class="corner c3"></span><span class="corner c4"></span>
+        <span class="mon-hud">14/07 · 21:47:03 · CONF 0.94</span>
+      </div>
+      <div class="wa">
+        <div class="wa-top"><span class="wd"></span> COREXIA · WhatsApp</div>
+        <h4>🔫 Arma de fogo detectada</h4>
+        <p>Câmera 07 — Rua Central. Confiança 94%. Foto anexada.</p>
+        <div class="stamp">agora · entregue ao cliente</div>
+      </div>
+    </div>
+  </div></section>
+
+  <!-- STATS BAND -->
+  <div class="band"><div class="wrap stats">
+    <div class="stat reveal"><div class="v">&lt;2s</div><div class="k">detecção → alerta</div></div>
+    <div class="stat reveal"><div class="v">4</div><div class="k">tipos de ameaça</div></div>
+    <div class="stat reveal"><div class="v">2</div><div class="k">estágios de IA</div></div>
+    <div class="stat reveal"><div class="v">100%</div><div class="k">na sua infra</div></div>
+  </div></div>
+
+  <!-- COMO FUNCIONA -->
+  <section id="como"><div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">Como funciona</span>
+      <h2>Da câmera ao alerta no WhatsApp, em segundos.</h2>
+      <p>Sem operador olhando tela o dia inteiro. A IA vigia por você e só chama quando é de verdade.</p>
+    </div>
+    <div class="steps">
+      <div class="step reveal"><div class="ico"><svg class="i" viewBox="0 0 24 24"><path d="M2 7h13v10H2z"/><path d="M15 10l6-3v10l-6-3"/></svg></div>
+        <div class="n">01 · Transmite</div><h3>A câmera manda o vídeo</h3>
+        <p>Suas câmeras de rua ou de loja transmitem por RTMP/RTSP. Cadastrou no painel, entrou na vigilância.</p></div>
+      <div class="step reveal"><div class="ico"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg></div>
+        <div class="n">02 · Analisa</div><h3>A IA lê cada frame</h3>
+        <p>Um detector rápido acha o candidato e um <b>2º estágio de visão confirma</b> — pra não te acordar com alarme falso.</p></div>
+      <div class="step reveal"><div class="ico"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l9 4v5c0 5-3.5 8-9 9-5.5-1-9-4-9-9V7z"/><path d="M12 8v5M12 16v.5"/></svg></div>
+        <div class="n">03 · Alerta</div><h3>Você é avisado na hora</h3>
+        <p>Ameaça confirmada → alerta no <b>WhatsApp + painel</b>, com foto da cena e a câmera exata. No cliente certo.</p></div>
+    </div>
+  </div></section>
+
+  <!-- RECURSOS -->
+  <section id="recursos"><div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">Recursos</span>
+      <h2>Uma central de segurança inteira, com IA no centro.</h2>
+    </div>
+    <div class="feat">
+      <div class="card reveal"><div class="ico"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l9 4v5c0 5-3.5 8-9 9-5.5-1-9-4-9-9V7z"/></svg></div>
+        <span class="tag">Detecção</span><h3>Ameaça em tempo real</h3>
+        <p>Arma de fogo, arma branca, fogo/fumaça e intruso — identificados no vídeo ao vivo, quadro a quadro.</p></div>
+      <div class="card reveal"><div class="ico"><svg class="i" viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 01-12.5 7.5L3 21l2-5.5A8.5 8.5 0 1121 11.5z"/></svg></div>
+        <span class="tag">Alerta</span><h3>WhatsApp + painel</h3>
+        <p>O alerta chega na hora com foto e localização — no zap do cliente e no painel do provedor.</p></div>
+      <div class="card reveal"><div class="ico"><svg class="i" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/><path d="M22 11v6a2 2 0 01-2 2H4"/></svg></div>
+        <span class="tag">Precisão</span><h3>Anti-falso-positivo</h3>
+        <p>Dois estágios + filtro de persistência: só alerta o que aparece de verdade, não a sombra que passou.</p></div>
+      <div class="card reveal"><div class="ico"><svg class="i" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg></div>
+        <span class="tag">App do cliente</span><h3>Câmeras no celular (PWA)</h3>
+        <p>O morador ou lojista instala o app e vê as câmeras dele ao vivo, com os alertas — só as dele.</p></div>
+      <div class="card reveal"><div class="ico"><svg class="i" viewBox="0 0 24 24"><path d="M3 9l9-6 9 6v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><path d="M9 21V12h6v9"/></svg></div>
+        <span class="tag">Multi-tenant</span><h3>Cada um só vê o que é dele</h3>
+        <p>Corexia, provedor e cliente final: painéis separados, escopo garantido no servidor. Zero vazamento entre contas.</p></div>
+      <div class="card reveal"><div class="ico"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M7 20h10M9 16v4M15 16v4"/></svg></div>
+        <span class="tag">Infra própria</span><h3>Roda no seu servidor</h3>
+        <p>A IA processa local (GPU sua). O vídeo não vai pra nuvem de terceiro — dado do seu cliente fica com você.</p></div>
+    </div>
+  </div></section>
+
+  <!-- REVENDA -->
+  <section id="revenda"><div class="wrap">
+    <div class="resale reveal">
+      <div class="sec-head" style="margin-bottom:26px">
+        <span class="eyebrow">Modelo de revenda</span>
+        <h2>Feito pra você revender.</h2>
+        <p>A Corexia é a plataforma. O provedor de internet leva pro cliente final. Todo mundo ganha um painel, cada um com o seu.</p>
+      </div>
+      <div class="flow">
+        <div class="tier"><div class="role">Plataforma</div><h3>Corexia</h3><p>A tecnologia: IA, painel, app, alertas. Você libera câmeras pros provedores.</p></div>
+        <div class="arrow">→</div>
+        <div class="tier"><div class="role">Revenda</div><h3>Provedor / ISP</h3><p>Recebe as câmeras liberadas, cadastra os clientes finais e revende a segurança na sua marca.</p></div>
+        <div class="arrow">→</div>
+        <div class="tier"><div class="role">Ponta</div><h3>Cliente final</h3><p>O comércio ou o morador vê suas câmeras no app e recebe o alerta no WhatsApp.</p></div>
+      </div>
+    </div>
+  </div></section>
+
+  <!-- APP -->
+  <section><div class="wrap app-grid">
+    <div class="reveal">
+      <div class="phone"><div class="screen">
+        <div class="ph-top"><span class="logo" style="width:22px;height:22px;border-radius:7px"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#1a0e02" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/></svg></span> Minhas câmeras</div>
+        <div class="ph-cams">
+          <div class="ph-cam"><span class="lv">AO VIVO</span><span class="nm">Frente da loja</span></div>
+          <div class="ph-cam"><span class="lv">AO VIVO</span><span class="nm">Estoque</span></div>
+          <div class="ph-cam"><span class="lv">AO VIVO</span><span class="nm">Calçada</span></div>
+        </div>
+        <div class="ph-tab"><span class="on"></span><span></span><span></span><span></span></div>
+      </div></div>
+    </div>
+    <div>
+      <span class="eyebrow">O app do cliente final</span>
+      <h2 style="font-size:clamp(26px,3.4vw,38px);margin-top:14px">Segurança no bolso do seu cliente.</h2>
+      <ul class="app-list">
+        <li><span class="ck">✓</span><div><b>Instala como app</b><p>PWA: abre no navegador, toca em "instalar" e vira ícone na tela do celular. Sem loja de app.</p></div></li>
+        <li><span class="ck">✓</span><div><b>Vê só as câmeras dele</b><p>O cliente enxerga apenas as câmeras que o provedor liberou pra ele — ao vivo, a qualquer hora.</p></div></li>
+        <li><span class="ck">✓</span><div><b>Recebe os alertas</b><p>Detectou ameaça na câmera dele? Chega no app e no WhatsApp, com foto.</p></div></li>
+      </ul>
+    </div>
+  </div></section>
+
+  <!-- PLANOS -->
+  <section id="planos"><div class="wrap">
+    <div class="sec-head reveal" style="margin-left:auto;margin-right:auto;text-align:center">
+      <span class="eyebrow">Planos</span>
+      <h2>Escala com você — da primeira câmera à cidade inteira.</h2>
+      <p style="margin-left:auto;margin-right:auto">Valores por volume de câmeras. Fale com a gente e a gente monta o plano do seu tamanho.</p>
+    </div>
+    <div class="plans">
+      <div class="plan reveal"><h3>Comércio</h3>
+        <div class="price"><b>Sob consulta</b> / mês</div>
+        <ul><li>Até 8 câmeras</li><li>IA de arma e fogo</li><li>Alerta WhatsApp + painel</li><li>App do cliente (PWA)</li></ul>
+        <a class="btn btn-ghost" href="#entrar">Começar</a></div>
+      <div class="plan feature reveal"><span class="badge">Mais usado</span><h3>Provedor</h3>
+        <div class="price"><b>Sob consulta</b> / mês</div>
+        <ul><li>Câmeras ilimitadas</li><li>Revenda pros seus clientes</li><li>Painel do provedor + multi-tenant</li><li>Todos os tipos de ameaça</li><li>Sua marca</li></ul>
+        <a class="btn btn-primary" href="#entrar">Falar com a Corexia</a></div>
+      <div class="plan reveal"><h3>Enterprise</h3>
+        <div class="price"><b>Sob consulta</b></div>
+        <ul><li>Infra dedicada + GPU</li><li>Gravação em servidor próprio</li><li>Integração (IXC/SGP/ERP)</li><li>Suporte prioritário</li></ul>
+        <a class="btn btn-ghost" href="#entrar">Conversar</a></div>
+    </div>
+  </div></section>
+
+  <!-- FINAL CTA -->
+  <div class="divider"></div>
+  <section class="final" id="entrar"><div class="wrap reveal">
+    <span class="eyebrow">Corexia</span>
+    <h2>Pronto pra ver a IA rodando nas suas câmeras?</h2>
+    <p>Cadastra a câmera, a IA entra sozinha. Quando ela vir uma ameaça, você vai ser o primeiro a saber.</p>
+    <div class="hero-cta">
+      <a class="btn btn-primary" href="https://wa.me/" onclick="return false">Falar no WhatsApp
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#1a0e02" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 01-12.5 7.5L3 21l2-5.5A8.5 8.5 0 1121 11.5z"/></svg></a>
+      <a class="btn btn-ghost" href="#top">Acessar o painel</a>
+    </div>
+  </div></section>
+</main>
+
+<footer><div class="wrap foot">
+  <div class="brand" style="font-size:16px"><span class="logo" style="width:26px;height:26px"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#1a0e02" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg></span> COREXIA</div>
+  <div class="mono" style="font-size:12.5px">Sistema Integrado de Vigilância Inteligente</div>
+  <div>© 2026 Corexia · Todos os direitos reservados</div>
+</div></footer>
+
+<script>
+  const reveals=[...document.querySelectorAll('.reveal')];
+  const show=el=>el.classList.add('in');
+  const io=('IntersectionObserver' in window)?new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){show(e.target);io.unobserve(e.target)}})},{threshold:.08,rootMargin:'0px 0px -5% 0px'}):null;
+  reveals.forEach((el,i)=>{el.style.transitionDelay=(Math.min(i,4)*55)+'ms';io?io.observe(el):show(el)});
+  /* fail-safe: nada fica invisivel — revela tudo depois de 1.6s (render de pagina inteira, observer que nao disparou, etc.) */
+  setTimeout(()=>reveals.forEach(show),1600);
+</script>
+</body></html>

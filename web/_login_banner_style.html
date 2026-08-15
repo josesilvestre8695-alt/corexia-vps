@@ -1,0 +1,18 @@
+    <style id="corexia-login-banner">
+      /* Banner do login: arte de produto no painel direito.
+         Injetado sobre o build compilado (sem fonte React). Reversivel: remover este bloco
+         e o arquivo web/brand/login-banner.png. Visivel so em telas grandes (lg+), igual ao design original. */
+      @media (min-width: 1024px) {
+        .relative.hidden.lg\:block.overflow-hidden.bg-\[\#0b0d12\] {
+          background-image: url("/brand/login-banner.png?v=1") !important;
+          background-size: cover !important;
+          background-position: center right !important;
+          background-repeat: no-repeat !important;
+          background-color: #0b0d12 !important;
+        }
+        /* esconde os elementos decorativos (gradiente, glow, hexagono, destaques) que ficariam sobre a arte */
+        .relative.hidden.lg\:block.overflow-hidden.bg-\[\#0b0d12\] > * {
+          display: none !important;
+        }
+      }
+    </style>

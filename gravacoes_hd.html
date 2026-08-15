@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Corexia — Gravações por Cliente (HD)</title>
+<style>
+  :root{--bg:#0b0f17;--card:#141a24;--card2:#1b232f;--line:#263141;--tx:#e6edf6;--mut:#8ba0b8;--ac:#3ea6ff;--ac2:#1f6feb;--ok:#3fb950;--warn:#d29922}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--tx)}
+  header{position:sticky;top:0;background:linear-gradient(#0b0f17,#0b0f17ee);border-bottom:1px solid var(--line);padding:14px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;z-index:5}
+  header h1{font-size:17px;margin:0;font-weight:700;letter-spacing:.2px}
+  header .badge{font-size:12px;color:var(--mut);background:var(--card2);border:1px solid var(--line);padding:3px 9px;border-radius:999px}
+  header .sp{flex:1}
+  header a{color:var(--ac);text-decoration:none;font-size:13px}
+  .wrap{max-width:1100px;margin:0 auto;padding:18px 20px 60px}
+  .prov{margin:18px 0}
+  .prov>.h{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px;color:#cfe3ff;margin-bottom:8px}
+  .prov>.h .dot{width:8px;height:8px;border-radius:50%;background:var(--ac2)}
+  .cli{background:var(--card);border:1px solid var(--line);border-radius:12px;margin:10px 0;overflow:hidden}
+  .cli>.chd{display:flex;align-items:center;gap:12px;padding:13px 15px;cursor:pointer;user-select:none}
+  .cli>.chd:hover{background:var(--card2)}
+  .cli .nm{font-weight:600}
+  .cli .meta{color:var(--mut);font-size:12.5px}
+  .cli .sp{flex:1}
+  .cli .chev{transition:transform .15s;color:var(--mut)}
+  .cli.open .chev{transform:rotate(90deg)}
+  .cams{display:none;padding:2px 12px 12px}
+  .cli.open .cams{display:block}
+  .cam{border-top:1px solid var(--line);padding:11px 6px}
+  .cam .ch{display:flex;align-items:center;gap:10px;cursor:pointer}
+  .cam .ch:hover .cnm{color:var(--ac)}
+  .cam .cnm{font-weight:600;font-size:14px}
+  .cam .tag{font-size:11px;color:var(--mut);border:1px solid var(--line);border-radius:6px;padding:1px 6px}
+  .cam .sp{flex:1}
+  .cam .mb{color:var(--mut);font-size:12px}
+  .dias{display:none;flex-wrap:wrap;gap:7px;margin:10px 0 4px 26px}
+  .cam.open .dias{display:flex}
+  .dia{font-size:12.5px;background:var(--card2);border:1px solid var(--line);color:var(--tx);border-radius:8px;padding:5px 10px;cursor:pointer}
+  .dia:hover{border-color:var(--ac)}
+  .dia.sel{background:var(--ac2);border-color:var(--ac2);color:#fff}
+  .files{margin:8px 0 6px 26px}
+  .file{display:flex;align-items:center;gap:12px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin:6px 0;background:var(--card2)}
+  .file .t{font-variant-numeric:tabular-nums;font-size:13px}
+  .file .s{color:var(--mut);font-size:12px}
+  .file .sp{flex:1}
+  .file a{background:var(--ac2);color:#fff;text-decoration:none;font-size:12.5px;padding:6px 12px;border-radius:7px;font-weight:600}
+  .file a:hover{background:var(--ac)}
+  .empty{color:var(--mut);font-size:13px;padding:10px 6px}
+  .msg{max-width:520px;margin:80px auto;text-align:center;color:var(--mut)}
+  .msg a{color:var(--ac)}
+  .sk{color:var(--mut);padding:40px;text-align:center}
+  .unassigned .dot{background:var(--warn)!important}
+</style>
+</head>
+<body>
+<header>
+  <h1>📁 Corexia · Gravações por Cliente</h1>
+  <span class="badge" id="role">—</span>
+  <span class="badge" id="tot">—</span>
+  <span class="sp"></span>
+  <a href="/">← voltar ao painel</a>
+</header>
+<div class="wrap" id="root"><div class="sk">carregando workspaces…</div></div>
+
+<script>
+const TOK = localStorage.getItem("corexia_token");
+const root = document.getElementById("root");
+const fmtMB = mb => mb>=1024 ? (mb/1024).toFixed(1)+" GB" : (mb||0).toFixed(0)+" MB";
+const esc = s => (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+async function api(path){
+  const r = await fetch(path,{headers:{Authorization:"Bearer "+TOK}});
+  if(r.status===401){throw new Error("401");}
+  if(!r.ok) throw new Error("HTTP "+r.status);
+  return r.json();
+}
+
+function fileRow(camId, f){
+  const url = f.url + "?t=" + encodeURIComponent(TOK);
+  return `<div class="file"><span class="t">${esc(f.inicio||f.arquivo)}</span>
+    <span class="s">${(f.tamanho_mb||0).toFixed(1)} MB</span><span class="sp"></span>
+    <a href="${url}" download="${esc(f.arquivo)}">baixar</a></div>`;
+}
+
+async function openDia(camEl, camId, dia, diaEl){
+  camEl.querySelectorAll(".dia").forEach(d=>d.classList.remove("sel"));
+  diaEl.classList.add("sel");
+  let box = camEl.querySelector(".files");
+  if(!box){box=document.createElement("div");box.className="files";camEl.querySelector(".dias").after(box);}
+  box.innerHTML = '<div class="empty">carregando arquivos…</div>';
+  try{
+    const arqs = await api(`/api/gravacoes?camera_id=${encodeURIComponent(camId)}&data=${encodeURIComponent(dia)}`);
+    box.innerHTML = arqs.length ? arqs.map(f=>fileRow(camId,f)).join("") : '<div class="empty">sem arquivos neste dia</div>';
+  }catch(e){ box.innerHTML = '<div class="empty">erro ao listar ('+e.message+')</div>'; }
+}
+
+function camBlock(cam){
+  const tag = cam.decode_engine ? `<span class="tag">${esc(cam.decode_engine)}</span>` : "";
+  const el = document.createElement("div"); el.className="cam";
+  el.innerHTML = `<div class="ch"><span class="cnm">🎥 ${esc(cam.camera_nome)}</span>${tag}
+      <span class="sp"></span><span class="mb">${cam.total_arquivos} arq · ${fmtMB(cam.tamanho_mb)}</span></div>
+    <div class="dias"></div>`;
+  const dias = el.querySelector(".dias");
+  (cam.dias||[]).forEach(d=>{
+    const b=document.createElement("span"); b.className="dia";
+    const n=(cam.dias_contagem&&cam.dias_contagem[d])||0;
+    b.textContent = d + (n?` (${n})`:"");
+    b.onclick=()=>openDia(el,cam.camera_id,d,b);
+    dias.appendChild(b);
+  });
+  if(!(cam.dias||[]).length) dias.innerHTML='<span class="empty">sem gravações ainda</span>';
+  el.querySelector(".ch").onclick=()=>el.classList.toggle("open");
+  return el;
+}
+
+function cliBlock(cli){
+  const el=document.createElement("div"); el.className="cli";
+  el.innerHTML=`<div class="chd"><span class="chev">▶</span>
+     <span class="nm">🏢 ${esc(cli.cliente_nome)}</span>
+     <span class="meta">· ${cli.cameras.length} câmera(s) · ${cli.total_arquivos} arq · ${fmtMB(cli.tamanho_mb)}</span>
+     <span class="sp"></span></div><div class="cams"></div>`;
+  const cams=el.querySelector(".cams");
+  cli.cameras.forEach(c=>cams.appendChild(camBlock(c)));
+  if(!cli.cameras.length) cams.innerHTML='<div class="empty">nenhuma câmera</div>';
+  el.querySelector(".chd").onclick=()=>el.classList.toggle("open");
+  return el;
+}
+
+async function main(){
+  if(!TOK){ root.innerHTML='<div class="msg">Você precisa <a href="/">entrar no painel</a> primeiro.<br><br>Depois de logar, volte para esta página.</div>'; return; }
+  let data;
+  try{ data = await api("/api/gravacoes/workspaces"); }
+  catch(e){
+    root.innerHTML = e.message==="401"
+      ? '<div class="msg">Sessão expirada. <a href="/">Faça login</a> novamente.</div>'
+      : '<div class="msg">Erro ao carregar: '+esc(e.message)+'</div>';
+    return;
+  }
+  document.getElementById("role").textContent = "perfil: "+data.role;
+  let totArq=0, totMB=0, totCam=0;
+  data.workspaces.forEach(p=>p.clientes.forEach(c=>{totArq+=c.total_arquivos;totMB+=c.tamanho_mb;totCam+=c.cameras.length;}));
+  document.getElementById("tot").textContent = `${totCam} câmeras · ${totArq} arquivos · ${fmtMB(totMB)}`;
+  root.innerHTML="";
+  if(!data.workspaces.length){ root.innerHTML='<div class="msg">Nenhuma câmera visível para o seu perfil.</div>'; return; }
+  data.workspaces.forEach(prov=>{
+    const pv=document.createElement("div"); pv.className="prov"+(prov.provedor_id?"":" unassigned");
+    pv.innerHTML=`<div class="h"><span class="dot"></span>${esc(prov.provedor_nome)}</div>`;
+    prov.clientes.forEach(cli=>pv.appendChild(cliBlock(cli)));
+    root.appendChild(pv);
+  });
+  // abre o primeiro cliente por conveniencia
+  const first=root.querySelector(".cli"); if(first) first.classList.add("open");
+}
+main();
+</script>
+</body>
+</html>

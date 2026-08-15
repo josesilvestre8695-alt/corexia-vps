@@ -1,0 +1,47 @@
+# Evolution API (WhatsApp gratis, self-hosted) para o Corexia.
+# Subir na Xeon:  docker compose -f evolution-compose.yml up -d
+services:
+  evolution:
+    image: atendai/evolution-api:v2.1.1
+    container_name: corexia-evolution
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      - AUTHENTICATION_API_KEY=corexia-evo-key-2026
+      - DATABASE_ENABLED=true
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://evolution:evolution123@evo-postgres:5432/evolution
+      - DATABASE_SAVE_DATA_INSTANCE=true
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://evo-redis:6379
+      - CACHE_REDIS_PREFIX_KEY=corexia
+      - CACHE_LOCAL_ENABLED=false
+    depends_on:
+      - evo-postgres
+      - evo-redis
+    volumes:
+      - evolution_instances:/evolution/instances
+
+  evo-postgres:
+    image: postgres:15
+    container_name: corexia-evo-postgres
+    restart: always
+    environment:
+      - POSTGRES_DB=evolution
+      - POSTGRES_USER=evolution
+      - POSTGRES_PASSWORD=evolution123
+    volumes:
+      - evo_pg:/var/lib/postgresql/data
+
+  evo-redis:
+    image: redis:7
+    container_name: corexia-evo-redis
+    restart: always
+    volumes:
+      - evo_redis:/data
+
+volumes:
+  evolution_instances:
+  evo_pg:
+  evo_redis:

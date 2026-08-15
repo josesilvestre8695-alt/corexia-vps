@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/brand/logo-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f1115" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Corexia" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <title>Corexia — Monitoramento Inteligente</title>
+    <script>
+      // Aplica o tema ANTES de renderizar (evita flash). Dark e o padrao.
+      (function () {
+        try {
+          var t = localStorage.getItem("corexia-theme") || "dark";
+          document.documentElement.setAttribute("data-theme", t);
+          document.documentElement.style.colorScheme = t;
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-D4dhLdYS.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CnR0OS0_.css">
+      <style id="corexia-login-banner">
+      /* Banner do login: arte de produto no painel direito.
+         Injetado sobre o build compilado (sem fonte React). Reversivel: remover este bloco
+         e o arquivo web/brand/login-banner.png. Visivel so em telas grandes (lg+), igual ao design original. */
+      @media (min-width: 1024px) {
+        .relative.hidden.lg\:block.overflow-hidden.bg-\[\#0b0d12\] {
+          background-image: url("/brand/login-banner.png?v=1") !important;
+          background-size: cover !important;
+          background-position: center right !important;
+          background-repeat: no-repeat !important;
+          background-color: #0b0d12 !important;
+        }
+        /* esconde os elementos decorativos (gradiente, glow, hexagono, destaques) que ficariam sobre a arte */
+        .relative.hidden.lg\:block.overflow-hidden.bg-\[\#0b0d12\] > * {
+          display: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

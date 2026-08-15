@@ -1,0 +1,15 @@
+[
+  {
+    "nome": "Portão Frente",
+    "camera_id": "COLE_O_ID_DA_CAMERA_NO_BASE44",
+    "rtsp_url": "rtsp://usuario:senha@IP_FLUSSONIC:554/portao_frente",
+    "gpu": 0
+  },
+  {
+    "nome": "Estoque",
+    "camera_id": "",
+    "cliente_telefone": "5581999999999",
+    "rtsp_url": "rtsp://usuario:senha@IP_FLUSSONIC:554/estoque",
+    "gpu": 1
+  }
+]
