@@ -1932,6 +1932,179 @@ def grav_list(req: Request):
     out.sort(key=lambda x: x["inicio"])
     return out
 
+@app.get("/api/gravacoes/sharelink")
+def grav_sharelink(req: Request):
+    """Link temporario (default 7 dias) de UMA gravacao, escopado ao cliente (baixar/compartilhar)."""
+    u = current_user(req)
+    if not u:
+        return _unauth()
+    relpath = (req.query_params.get("path") or "").strip().lstrip("/")
+    if not relpath or ".." in relpath or not relpath.lower().endswith(".mp4"):
+        return JSONResponse({"error": "path invalido"}, status_code=400)
+    allowed = set(_rec_safe(c.get("cliente_nome") or "SEM_CLIENTE") for c in _gravacoes_visiveis(u))
+    if relpath.split("/")[0] not in allowed:
+        return _forbidden("sem acesso a esta gravacao")
+    try:
+        dias = max(1, min(int(req.query_params.get("dias", "7") or 7), 30))
+    except Exception:
+        dias = 7
+    return {"url": _rec_signed_url(relpath, ttl=dias * 86400), "dias": dias}
+
+
+@app.get("/api/gravacoes/clip")
+def grav_clip(req: Request):
+    """Recorta um pedaco de UMA gravacao (ffmpeg -c copy, via range) e devolve como download. Escopado ao cliente."""
+    u = current_user(req, allow_query_token=True)
+    if not u:
+        return _unauth()
+    relpath = (req.query_params.get("path") or "").strip().lstrip("/")
+    if not relpath or ".." in relpath or not relpath.lower().endswith(".mp4"):
+        return JSONResponse({"error": "path invalido"}, status_code=400)
+    allowed = set(_rec_safe(c.get("cliente_nome") or "SEM_CLIENTE") for c in _gravacoes_visiveis(u))
+    if relpath.split("/")[0] not in allowed:
+        return _forbidden("sem acesso a esta gravacao")
+    try:
+        start = max(0.0, float(req.query_params.get("start", "0") or 0))
+        dur = float(req.query_params.get("dur", "0") or 0)
+    except Exception:
+        return JSONResponse({"error": "tempos invalidos"}, status_code=400)
+    if dur <= 0 or dur > 300:
+        return JSONResponse({"error": "duracao invalida (1s a 5min)"}, status_code=400)
+    from starlette.background import BackgroundTask
+    src = _rec_signed_url(relpath, 900)
+    outdir = "/tmp/corexia_clips"; os.makedirs(outdir, exist_ok=True)
+    out = os.path.join(outdir, secrets.token_hex(8) + ".mp4")
+    try:
+        subprocess.run(["ffmpeg", "-nostdin", "-y", "-loglevel", "error", "-ss", str(start), "-i", src, "-t", str(dur), "-c", "copy", "-movflags", "+faststart", out], timeout=180, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        return JSONResponse({"error": "falha ao recortar"}, status_code=500)
+    if not (os.path.exists(out) and os.path.getsize(out) > 0):
+        try:
+            if os.path.exists(out):
+                os.remove(out)
+        except Exception:
+            pass
+        return JSONResponse({"error": "recorte vazio (tente outro intervalo)"}, status_code=500)
+    fname = os.path.basename(relpath)[:-4] + "_recorte.mp4"
+    return FileResponse(out, media_type="video/mp4", filename=fname, background=BackgroundTask(lambda p=out: (os.path.exists(p) and os.remove(p))))
+
+
+def _clip_sign(relpath, start_s, dur_s, exp):
+    return hmac.new(_MEDIA_KEY, ("clip|%s|%s|%s|%s" % (relpath, start_s, dur_s, exp)).encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _clip_signed_url(relpath, start, dur, ttl=7 * 86400):
+    from urllib.parse import quote
+    exp = int(time.time()) + int(ttl)
+    start_s = str(start); dur_s = str(dur)
+    sig = _clip_sign(relpath, start_s, dur_s, exp)
+    base = os.getenv("PANEL_BASE", "https://grupocorexia.com.br").rstrip("/")
+    return "%s/api/gravacoes/clip-dl?path=%s&start=%s&dur=%s&exp=%s&sig=%s" % (base, quote(relpath), start_s, dur_s, exp, sig)
+
+
+@app.get("/api/gravacoes/clip-dl")
+def grav_clip_dl(req: Request):
+    """Baixa o CORTE via link assinado (sem login) — usado nos e-mails. Gera o corte na hora do clique."""
+    from starlette.responses import PlainTextResponse
+    q = req.query_params
+    relpath = (q.get("path") or "").strip().lstrip("/")
+    start_s = q.get("start") or "0"; dur_s = q.get("dur") or "0"
+    sig = (q.get("sig") or "").split("?")[0]
+    try:
+        exp = int(q.get("exp") or 0)
+    except Exception:
+        return PlainTextResponse("Link invalido.", status_code=400)
+    if not relpath or ".." in relpath or not relpath.lower().endswith(".mp4"):
+        return PlainTextResponse("Link invalido.", status_code=400)
+    if exp < int(time.time()):
+        return PlainTextResponse("Link expirado. Peca um novo pelo portal.", status_code=410)
+    if not hmac.compare_digest(sig, _clip_sign(relpath, start_s, dur_s, exp)):
+        return PlainTextResponse("Assinatura invalida.", status_code=403)
+    try:
+        start = max(0.0, float(start_s)); dur = float(dur_s)
+    except Exception:
+        return PlainTextResponse("Tempos invalidos.", status_code=400)
+    if dur <= 0 or dur > 300:
+        return PlainTextResponse("Duracao invalida.", status_code=400)
+    from starlette.background import BackgroundTask
+    src = _rec_signed_url(relpath, 900)
+    outdir = "/tmp/corexia_clips"; os.makedirs(outdir, exist_ok=True)
+    out = os.path.join(outdir, secrets.token_hex(8) + ".mp4")
+    try:
+        subprocess.run(["ffmpeg", "-nostdin", "-y", "-loglevel", "error", "-ss", str(start), "-i", src, "-t", str(dur), "-c", "copy", "-movflags", "+faststart", out], timeout=120, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        return PlainTextResponse("Falha ao gerar o corte. Tente novamente.", status_code=500)
+    if not (os.path.exists(out) and os.path.getsize(out) > 0):
+        if os.path.exists(out):
+            os.remove(out)
+        return PlainTextResponse("Corte vazio (tente outro intervalo).", status_code=500)
+    fname = os.path.basename(relpath)[:-4] + "_corte.mp4"
+    return FileResponse(out, media_type="video/mp4", filename=fname, background=BackgroundTask(lambda p=out: (os.path.exists(p) and os.remove(p))))
+
+
+def _email_send_worker(relpath, to, msg, st, du, muser, mpass):
+    import smtplib, ssl
+    from email.message import EmailMessage
+    try:
+        label = os.path.basename(relpath)
+        is_clip = (st is not None and du)
+        if is_clip:
+            link = _clip_signed_url(relpath, st, du, 7 * 86400)
+            body = "Segue o link do CORTE solicitado (valido 7 dias). Clique para baixar/assistir:\n\n" + link
+        else:
+            link = _rec_signed_url(relpath, ttl=7 * 86400)
+            body = "Segue o link da gravacao (valido 7 dias). Clique para baixar/assistir:\n\n" + link
+        m = EmailMessage()
+        m["From"] = "Corexia <%s>" % muser; m["To"] = ", ".join(to); m["Subject"] = "Gravacao Corexia - " + label
+        text = (msg + "\n\n") if msg else ""
+        text += body + "\n\n-- Corexia"
+        m.set_content(text)
+        ctx = ssl.create_default_context()
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ctx, timeout=60) as srv:
+            srv.login(muser, mpass); srv.send_message(m)
+        print("email(link) enviado p/", ", ".join(to), "clip" if is_clip else "full", flush=True)
+        return {"success": True, "mode": "link"}
+    except Exception as e:
+        print("email worker ERRO:", str(e)[:160], flush=True)
+        return {"error": "falha ao enviar: " + str(e)[:140]}
+
+
+@app.post("/api/gravacoes/email")
+async def grav_email(req: Request):
+    """Envia UMA gravacao (ou recorte) por e-mail como LINK assinado (nao anexa; anexo de video e barrado por varios provedores). Trabalho em thread pra nao travar o backend."""
+    u = current_user(req)
+    if not u:
+        return _unauth()
+    b = await req.json()
+    relpath = (b.get("path") or "").strip().lstrip("/")
+    if not relpath or ".." in relpath or not relpath.lower().endswith(".mp4"):
+        return JSONResponse({"error": "path invalido"}, status_code=400)
+    allowed = set(_rec_safe(c.get("cliente_nome") or "SEM_CLIENTE") for c in _gravacoes_visiveis(u))
+    if relpath.split("/")[0] not in allowed:
+        return _forbidden("sem acesso a esta gravacao")
+    to = [e.strip() for e in re.split(r"[,;\s]+", (b.get("to") or "")) if "@" in e][:5]
+    if not to:
+        return JSONResponse({"error": "informe ao menos um e-mail valido"}, status_code=400)
+    msg = (b.get("msg") or "").strip()[:2000]
+    muser = os.getenv("MAIL_USER", ""); mpass = os.getenv("MAIL_PASS", "")
+    if not (muser and mpass):
+        return JSONResponse({"error": "e-mail nao configurado no servidor"}, status_code=500)
+    st = b.get("start"); du = b.get("dur")
+    if st is not None and du:
+        try:
+            st = max(0.0, float(st)); du = float(du)
+        except Exception:
+            return JSONResponse({"error": "tempos invalidos"}, status_code=400)
+        if du <= 0 or du > 300:
+            return JSONResponse({"error": "duracao invalida"}, status_code=400)
+    else:
+        st = None; du = None
+    import asyncio, functools
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(None, functools.partial(_email_send_worker, relpath, to, msg, st, du, muser, mpass))
+    return JSONResponse(result, status_code=200 if result.get("success") else 500)
+
+
 @app.get("/gravacao/{camera_id}/{arquivo}")
 async def grav_file(camera_id: str, arquivo: str, req: Request):
     u = current_user(req, allow_query_token=True)   # ?t= permitido SO aqui (tag <video>)
@@ -2039,6 +2212,17 @@ def _gen_thumb(camera_id):
             return False
     return os.path.exists(out)
 
+_thumb_inflight = set()
+def _gen_thumb_bg(camera_id):
+    if camera_id in _thumb_inflight:
+        return
+    _thumb_inflight.add(camera_id)
+    try:
+        _gen_thumb(camera_id)
+    finally:
+        _thumb_inflight.discard(camera_id)
+
+
 @app.get("/camthumb/{camera_id}")
 def camthumb(camera_id: str, req: Request):
     if "/" in camera_id or ".." in camera_id:
@@ -2052,7 +2236,10 @@ def camthumb(camera_id: str, req: Request):
             return _forbidden()
     out = os.path.join(THUMB_DIR, f"{camera_id}.jpg")
     if not (os.path.exists(out) and time.time() - os.path.getmtime(out) < THUMB_TTL):
-        _gen_thumb(camera_id)
+        if os.path.exists(out):
+            threading.Thread(target=_gen_thumb_bg, args=(camera_id,), daemon=True).start()
+        else:
+            _gen_thumb(camera_id)
     if os.path.exists(out):
         return FileResponse(out, media_type="image/jpeg",
                             headers={"Cache-Control": f"public, max-age={THUMB_TTL}"})
@@ -2798,6 +2985,66 @@ _PORTAL_MOS_JS = """<script>/* corexia-portal-mos */(function(){
 })();</script>"""
 
 
+_PORTAL_LOGOUT_JS = """<script>/* corexia-portal-logout */(function(){
+ var t=localStorage.getItem('corexia_token'); if(!t)return;
+ function done(){ try{localStorage.removeItem('corexia_token');localStorage.removeItem('corexia_user');}catch(e){} window.location.href='/'; }
+ function doLogout(e){ if(e){e.preventDefault();e.stopPropagation();} var tk=localStorage.getItem('corexia_token'); try{ fetch('/api/auth/logout',{method:'POST',headers:{'Authorization':'Bearer '+(tk||'')}}).then(done,done); }catch(_){ done(); } }
+ function findAjustes(){ var ns=document.querySelectorAll('a,button,li,[role=menuitem]'); for(var i=0;i<ns.length;i++){ var el=ns[i]; if(el.children.length>4)continue; var x=(el.textContent||'').trim().toLowerCase(); if(x.length<=14 && x.indexOf('ajuste')>=0) return el; } return null; }
+ function relabel(node,txt){ var set=false; var w=node.querySelectorAll('*'); for(var i=0;i<w.length;i++){ if(w[i].children.length===0 && (w[i].textContent||'').trim().length>1){ w[i].textContent=txt; set=true; break; } } if(!set)node.textContent=txt; }
+ function ensure(){
+  if(document.getElementById('cx-logout-item'))return;
+  var ref=findAjustes();
+  if(ref){ var a=ref.cloneNode(true); a.id='cx-logout-item'; a.removeAttribute('href'); a.style.cursor='pointer'; a.classList.remove('active'); relabel(a,'Sair'); try{var _sv=a.querySelector('svg'); if(_sv){_sv.setAttribute('viewBox','0 0 24 24');_sv.setAttribute('fill','none');_sv.setAttribute('stroke','currentColor');_sv.setAttribute('stroke-width','2');_sv.setAttribute('stroke-linecap','round');_sv.setAttribute('stroke-linejoin','round');_sv.innerHTML='<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line>';}}catch(e){} a.addEventListener('click',doLogout,true); ref.parentNode.insertBefore(a, ref.nextSibling); var fb=document.getElementById('cx-logout-btn'); if(fb)fb.remove(); return; }
+  if(document.getElementById('cx-logout-btn'))return;
+  var b=document.createElement('button'); b.id='cx-logout-btn'; b.innerHTML='&#128682; Sair';
+  b.style.cssText='position:fixed;right:16px;top:16px;z-index:99999;background:#1f2937;color:#fff;font-weight:700;font-family:system-ui,sans-serif;font-size:13px;padding:8px 14px;border:0;border-radius:20px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.3)';
+  b.addEventListener('click',doLogout,true); document.body.appendChild(b);
+ }
+ var pend=false; function sched(){ if(pend)return; pend=true; setTimeout(function(){pend=false; ensure();},150); }
+ ensure(); try{ var mo=new MutationObserver(sched); mo.observe(document.body||document.documentElement,{childList:true,subtree:true}); }catch(e){}
+})();</script>"""
+
+
+_PORTAL_THUMB_JS = """<script>/* corexia-portal-thumb */(function(){
+ if(!localStorage.getItem('corexia_token'))return;
+ function vis(el){ try{var r=el.getBoundingClientRect(); return r.bottom>0 && r.top<(window.innerHeight||1200) && r.right>0 && r.left<(window.innerWidth||1200);}catch(e){return true;} }
+ function bump(){ try{ var g=document.querySelectorAll('img[src*="/camthumb/"]'); for(var i=0;i<g.length;i++){ var im=g[i]; if(!vis(im))continue; var b=(im.src||'').split('?')[0]; if(b) im.src=b+'?t='+Date.now(); } }catch(e){} }
+ setTimeout(bump,5000); setInterval(bump,40000);
+})();</script>"""
+
+
+_PORTAL_REC_JS = """<script>/* corexia-portal-rec */(function(){
+ if(!localStorage.getItem('corexia_token'))return;
+ var BTN='display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:10px;border:0;cursor:pointer;font:600 13px system-ui,sans-serif';
+ function recVideo(){ var vs=document.querySelectorAll('video'); for(var i=0;i<vs.length;i++){ if((vs[i].currentSrc||vs[i].src||'').indexOf('/rec/')>=0) return vs[i]; } return null; }
+ function baseUrl(src){ return src.split('?t=')[0]; }
+ function relpath(src){ try{ var p=src.split('/rec/')[1]; return p?decodeURIComponent(p.split('?')[0]):''; }catch(e){return '';} }
+ function toast(msg,ok){ var t=document.createElement('div'); t.textContent=msg; t.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:100000;background:'+(ok?'#065f46':'#334155')+';color:#fff;padding:10px 18px;border-radius:22px;font:600 13px system-ui;box-shadow:0 6px 20px rgba(0,0,0,.4)'; document.body.appendChild(t); setTimeout(function(){try{t.remove();}catch(e){}},2800); }
+ function baixar(){ var v=recVideo(); var src=v&&(v.currentSrc||v.src); if(!src){toast('Toque num trecho primeiro');return;} var u=baseUrl(src); u+=(u.indexOf('?')>=0?'&':'?')+'dl=1'; var a=document.createElement('a'); a.href=u; a.download=''; document.body.appendChild(a); a.click(); a.remove(); toast('Baixando o trecho...',true); }
+ function copiar(){ var v=recVideo(); var src=v&&(v.currentSrc||v.src); if(!src){toast('Toque num trecho primeiro');return;} var rp=relpath(src); if(!rp){toast('Nao identifiquei o trecho');return;} var tk=localStorage.getItem('corexia_token'); fetch('/api/gravacoes/sharelink?dias=7&path='+encodeURIComponent(rp),{headers:{'Authorization':'Bearer '+tk}}).then(function(r){return r.json();}).then(function(j){ if(j&&j.url){ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(j.url).then(function(){toast('Link copiado! Vale 7 dias',true);},function(){window.prompt('Copie o link (7 dias):',j.url);}); } else { window.prompt('Copie o link (7 dias):',j.url); } } else { toast('Nao consegui gerar o link'); } }).catch(function(){toast('Erro ao gerar o link');}); }
+ function ensure(){ var v=recVideo(); if(!v){ var o=document.getElementById('cx-rec-bar'); if(o)o.remove(); return; } if(document.getElementById('cx-rec-bar'))return; var bar=document.createElement('div'); bar.id='cx-rec-bar'; bar.style.cssText='display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin:12px 0 4px'; var d=document.createElement('button'); d.innerHTML='&#11015; Baixar trecho'; d.style.cssText=BTN+';background:#f97316;color:#111'; d.onclick=baixar; var c=document.createElement('button'); c.innerHTML='&#128279; Copiar link'; c.style.cssText=BTN+';background:#1f2937;color:#fff'; c.onclick=copiar; bar.appendChild(d); bar.appendChild(c); var host=v.closest('div')||v; (host.parentNode||document.body).insertBefore(bar, host.nextSibling); }
+ var pend=false; function sched(){if(pend)return;pend=true;setTimeout(function(){pend=false;ensure();},250);}
+ ensure(); try{new MutationObserver(sched).observe(document.body||document.documentElement,{childList:true,subtree:true});}catch(e){}
+})();</script>"""
+
+
+_PORTAL_CLIP_JS = """<script>/* corexia-portal-clip */(function(){
+ if(!localStorage.getItem('corexia_token'))return;
+ var S=null,E=null,lastSrc='';
+ var BTN='padding:8px 12px;border-radius:9px;border:0;cursor:pointer;font:600 12.5px system-ui,sans-serif';
+ function recVideo(){ var vs=document.querySelectorAll('video'); for(var i=0;i<vs.length;i++){ if((vs[i].currentSrc||vs[i].src||'').indexOf('/rec/')>=0) return vs[i]; } return null; }
+ function relpath(src){ try{ var p=src.split('/rec/')[1]; return p?decodeURIComponent(p.split('?')[0]):''; }catch(e){return '';} }
+ function fmt(s){ s=Math.max(0,Math.floor(s)); var m=Math.floor(s/60),x=s%60; return (m<10?'0':'')+m+':'+(x<10?'0':'')+x; }
+ function toast(msg,ok){ var t=document.createElement('div'); t.textContent=msg; t.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:100000;background:'+(ok?'#065f46':'#334155')+';color:#fff;padding:10px 18px;border-radius:22px;font:600 13px system-ui'; document.body.appendChild(t); setTimeout(function(){try{t.remove();}catch(e){}},2800); }
+ function upd(){ var l=document.getElementById('cx-clip-lbl'); if(l)l.textContent='Recorte -> inicio: '+(S!=null?fmt(S):'--')+'  fim: '+(E!=null?fmt(E):'--'); }
+ function recortar(){ var v=recVideo(); var src=v&&(v.currentSrc||v.src); if(!src){toast('Toque num trecho');return;} if(S==null||E==null){toast('Marque inicio e fim');return;} if(E<=S){toast('O fim deve ser depois do inicio');return;} var dur=E-S; if(dur>300){toast('Recorte maximo de 5 min');return;} var rp=relpath(src); if(!rp){toast('Nao identifiquei o trecho');return;} var tk=localStorage.getItem('corexia_token'); var u='/api/gravacoes/clip?path='+encodeURIComponent(rp)+'&start='+S.toFixed(1)+'&dur='+dur.toFixed(1)+'&t='+encodeURIComponent(tk); toast('Recortando '+fmt(dur)+'... aguarde alguns segundos',true); var a=document.createElement('a'); a.href=u; a.download=''; document.body.appendChild(a); a.click(); a.remove(); }
+ function enviar(){ var v=recVideo(); var src=v&&(v.currentSrc||v.src); if(!src){toast('Toque num trecho');return;} var rp=relpath(src); if(!rp){toast('Nao identifiquei o trecho');return;} var to=window.prompt('E-mail(s) do destinatario (separe por virgula):',''); if(!to)return; var msg=window.prompt('Mensagem (opcional):','')||''; var body={path:rp,to:to,msg:msg}; if(S!=null&&E!=null&&E>S){ body.start=S; body.dur=E-S; } var tk=localStorage.getItem('corexia_token'); toast('Enviando... aguarde',true); fetch('/api/gravacoes/email',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tk},body:JSON.stringify(body)}).then(function(r){return r.json();}).then(function(j){ if(j&&j.success){ toast('Enviado! O link do corte foi para o e-mail.',true); } else { toast((j&&j.error)||'Falha ao enviar'); } }).catch(function(){toast('Erro ao enviar');}); }
+ function ensure(){ var v=recVideo(); if(!v){ var o=document.getElementById('cx-clip-bar'); if(o)o.remove(); return; } var cs=v.currentSrc||v.src||''; if(cs!==lastSrc){ lastSrc=cs; S=null; E=null; upd(); } if(document.getElementById('cx-clip-bar'))return; var bar=document.createElement('div'); bar.id='cx-clip-bar'; bar.style.cssText='display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;margin:2px 0 12px'; var lbl=document.createElement('span'); lbl.id='cx-clip-lbl'; lbl.style.cssText='font:600 12px system-ui;color:#94a3b8;margin-right:4px'; var bi=document.createElement('button'); bi.textContent='Marcar inicio'; bi.style.cssText=BTN+';background:#334155;color:#fff'; bi.onclick=function(){S=v.currentTime; if(E!=null&&E<=S)E=null; upd(); toast('Inicio marcado',true);}; var bf=document.createElement('button'); bf.textContent='Marcar fim'; bf.style.cssText=BTN+';background:#334155;color:#fff'; bf.onclick=function(){E=v.currentTime; upd(); toast('Fim marcado',true);}; var br=document.createElement('button'); br.innerHTML='&#9986; Recortar e baixar'; br.style.cssText=BTN+';background:#f97316;color:#111'; br.onclick=recortar; bar.appendChild(lbl); bar.appendChild(bi); bar.appendChild(bf); bar.appendChild(br); var be=document.createElement('button'); be.innerHTML='&#9993; Enviar por e-mail'; be.style.cssText=BTN+';background:#0e7490;color:#fff'; be.onclick=enviar; bar.appendChild(be); var rb=document.getElementById('cx-rec-bar'); if(rb&&rb.parentNode){ rb.parentNode.insertBefore(bar, rb.nextSibling); } else { var host=v.closest('div')||v; (host.parentNode||document.body).insertBefore(bar, host.nextSibling); } upd(); }
+ var pend=false; function sched(){if(pend)return;pend=true;setTimeout(function(){pend=false;ensure();},280);}
+ ensure(); try{new MutationObserver(sched).observe(document.body||document.documentElement,{childList:true,subtree:true});}catch(e){}
+})();</script>"""
+
+
 @app.get("/meus-mosaicos")
 def meus_mosaicos(req: Request):
     _pg = "<body style='font-family:system-ui,sans-serif;background:#0a0a0a;color:#fff;padding:40px'>%s</body>"
@@ -3251,6 +3498,14 @@ def spa(full_path: str, request: Request):
                 _inj += _WL_JS
             if "corexia-portal-mos" not in _html:
                 _inj += _PORTAL_MOS_JS
+            if "corexia-portal-logout" not in _html:
+                _inj += _PORTAL_LOGOUT_JS
+            if "corexia-portal-thumb" not in _html:
+                _inj += _PORTAL_THUMB_JS
+            if "corexia-portal-rec" not in _html:
+                _inj += _PORTAL_REC_JS
+            if "corexia-portal-clip" not in _html:
+                _inj += _PORTAL_CLIP_JS
             if "corexia-net" not in _html:
                 _inj += _NET_WIDGET_JS
             if "corexia-anxredir" not in _html:

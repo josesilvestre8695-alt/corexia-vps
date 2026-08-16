@@ -1,1 +1,1 @@
-{"ts": 1786731946, "cpu_pct": 0, "load": 5.68, "nucleos": 12, "mem_total_gb": 15.6, "mem_usada_gb": 1.1, "ffmpeg": 1, "buffers_vivos": 1, "buffers_total": 120, "disco": {"total_tb": 53.77, "usado_tb": 6.55, "pct": 12.2}, "recorder": "active", "mediamtx": "active", "agente": "storage-122", "net": {"rx_mbps": 3.42, "tx_mbps": 0.06, "ifaces": [{"iface": "ens3", "rx_mbps": 3.42, "tx_mbps": 0.06}]}}
+{"agente": "storage-122", "load": 0.17, "nucleos": 12, "disco": {"total_tb": 59.37, "usado_tb": 1.25, "pct": 2.1}, "mediamtx": "active", "recorder": "active", "ts": 1786861801}
