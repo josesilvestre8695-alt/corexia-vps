@@ -2908,7 +2908,7 @@ async def asaas_webhook(req: Request):
     fdata = {"asaas_payment_id": pay_id, "asaas_customer_id": cust, "asaas_subscription_id": sub,
              "dono_id": dono_id, "dono_entidade": dono_ent, "valor": pay.get("value", 0),
              "vencimento": pay.get("dueDate", ""), "status": status, "evento": ev,
-             "invoice_url": pay.get("invoiceUrl", "") or pay.get("bankSlipUrl", ""),
+             "invoice_url": pay.get("invoiceUrl", "") or pay.get("bankSlipUrl", ""), "link_boleto": pay.get("invoiceUrl", "") or pay.get("bankSlipUrl", ""),
              "pago_em": pay.get("paymentDate", ""), "atualizado_em": _now_iso()}
     if dono_ent == "Cliente":
         cli = _get_ent("Cliente", dono_id) or {}
@@ -2989,7 +2989,7 @@ def _upsert_fatura(p, cliente_nome, provedor_id=None):
              "numero": str(p.get("invoiceNumber") or p.get("nossoNumero") or pay_id),
              "valor": p.get("value", 0), "vencimento": due, "reference_month": due[:7],
              "status": _ASAAS_ST.get(p.get("status", ""), "pendente"),
-             "invoice_url": p.get("invoiceUrl", "") or p.get("bankSlipUrl", ""),
+             "invoice_url": p.get("invoiceUrl", "") or p.get("bankSlipUrl", ""), "link_boleto": p.get("invoiceUrl", "") or p.get("bankSlipUrl", ""),
              "pago_em": p.get("paymentDate", "") or "", "fonte": "asaas_sync", "atualizado_em": _now_iso()}
     if provedor_id:
         fdata["provedor_id"] = provedor_id

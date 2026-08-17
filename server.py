@@ -2962,6 +2962,34 @@ def mosaico_viewer(mid: str, req: Request):
     return HTMLResponse(html)
 
 
+_PORTAL_FATURAS_JS = r"""<script>/* corexia-portal-faturas */(function(){
+ if(!localStorage.getItem('corexia_token'))return;
+ function onPortal(){ return location.pathname.indexOf('/portal')===0; }
+ function fixHrefs(){
+  if(!onPortal())return;
+  var as=document.querySelectorAll('a[href]');
+  for(var i=0;i<as.length;i++){ var a=as[i]; var t=(a.textContent||'').replace(/\s+/g,' ').trim(); var h=a.getAttribute('href')||'';
+   if(t==='Faturas' && h.indexOf('/portal/faturas')<0 && (h.indexOf('fatura')>=0||h.indexOf('comercial')>=0)){ a.setAttribute('href','/portal/faturas'); }
+  }
+ }
+ document.addEventListener('click',function(e){
+  if(!onPortal())return;
+  var el=e.target;
+  for(var i=0;i<6 && el;i++,el=el.parentElement){
+   if(el.children && el.children.length>3)continue;
+   var t=(el.textContent||'').replace(/\s+/g,' ').trim();
+   if(t==='Faturas'){
+    if(location.pathname==='/portal/faturas')return;
+    e.preventDefault(); e.stopPropagation();
+    window.location.assign('/portal/faturas');
+    return;
+   }
+  }
+ },true);
+ fixHrefs(); try{new MutationObserver(fixHrefs).observe(document.body||document.documentElement,{childList:true,subtree:true});}catch(e){}
+})();</script>"""
+
+
 _PORTAL_MOS_JS = """<script>/* corexia-portal-mos */(function(){
  var t=localStorage.getItem('corexia_token'); if(!t)return;
  fetch('/api/auth/me',{headers:{'Authorization':'Bearer '+t}}).then(function(r){return r.json();}).then(function(u){
@@ -3506,6 +3534,8 @@ def spa(full_path: str, request: Request):
                 _inj += _PORTAL_REC_JS
             if "corexia-portal-clip" not in _html:
                 _inj += _PORTAL_CLIP_JS
+            if "corexia-portal-faturas" not in _html:
+                _inj += _PORTAL_FATURAS_JS
             if "corexia-net" not in _html:
                 _inj += _NET_WIDGET_JS
             if "corexia-anxredir" not in _html:
