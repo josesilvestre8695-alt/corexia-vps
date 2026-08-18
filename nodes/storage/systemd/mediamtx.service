@@ -1,0 +1,16 @@
+[Unit]
+Description=MediaMTX (RTMP/HLS/RTSP + gravacao 24/7) - Corexia
+After=network-online.target corexia-rtmp-redirect.service gravacoes.mount
+Wants=network-online.target
+
+[Service]
+User=corexia
+Group=corexia
+WorkingDirectory=/opt/mediamtx
+ExecStart=/opt/mediamtx/mediamtx /opt/mediamtx/mediamtx.yml
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

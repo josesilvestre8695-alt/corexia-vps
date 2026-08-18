@@ -1,0 +1,5 @@
+*/5 * * * * /opt/corexia/sync_cam_map.sh >> /gravacoes/_cammap_sync.log 2>&1
+*/2 * * * * /opt/corexia/push_ready.sh >/dev/null 2>&1
+17 4 * * * /usr/bin/python3 /opt/corexia/rec_retention.py >> /gravacoes/_retencao.log 2>&1
+*/2 * * * * /usr/bin/python3 /opt/corexia/storage_hb.py >/dev/null 2>&1
+*/5 * * * * /opt/corexia/rec_janitor.sh >/dev/null 2>&1

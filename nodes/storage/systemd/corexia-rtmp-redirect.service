@@ -1,0 +1,14 @@
+[Unit]
+Description=Redirect RTMP 1936 -> 1935 (ingest Corexia)
+After=network-online.target
+Wants=network-online.target
+Before=mediamtx.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash -c '/usr/sbin/iptables -t nat -C PREROUTING -p tcp --dport 1936 -j REDIRECT --to-ports 1935 2>/dev/null || /usr/sbin/iptables -t nat -A PREROUTING -p tcp --dport 1936 -j REDIRECT --to-ports 1935'
+ExecStop=/bin/bash -c '/usr/sbin/iptables -t nat -D PREROUTING -p tcp --dport 1936 -j REDIRECT --to-ports 1935 2>/dev/null || true'
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,7 @@
+[Unit]
+Description=IA health heartbeat a cada 60s
+[Timer]
+OnBootSec=20
+OnUnitActiveSec=60
+[Install]
+WantedBy=timers.target

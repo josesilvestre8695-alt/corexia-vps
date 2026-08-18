@@ -1,0 +1,12 @@
+[Unit]
+Description=Corexia Busca reverse tunnel Xeon->VPS
+After=network.target
+
+[Service]
+User=corexia
+ExecStart=/usr/bin/ssh -N -T -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new -o PreferredAuthentications=publickey -o IdentitiesOnly=yes -i /home/corexia/.ssh/vps_tunnel -R 127.0.0.1:9765:127.0.0.1:8765 root@179.198.127.65
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

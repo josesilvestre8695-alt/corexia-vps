@@ -1,0 +1,16 @@
+[Unit]
+Description=Corexia Busca CLIP service (Fase 2)
+After=network.target
+
+[Service]
+User=corexia
+WorkingDirectory=/home/corexia/corexia-ia/busca
+Environment=BUSCA_SECRET=b7f3c1a9e2d84056a1c3f9b2e7d40518
+Environment=BUSCA_PORT=8765
+Environment=LD_LIBRARY_PATH=/home/corexia/corexia-ia/env/lib/python3.11/site-packages/nvidia/cublas/lib:/home/corexia/corexia-ia/env/lib/python3.11/site-packages/nvidia/cufft/lib:/home/corexia/corexia-ia/env/lib/python3.11/site-packages/nvidia/cuda_runtime/lib:/home/corexia/corexia-ia/env/lib/python3.11/site-packages/nvidia/cuda_nvrtc/lib
+ExecStart=/home/corexia/corexia-ia/env/bin/python /home/corexia/corexia-ia/busca/busca_service.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

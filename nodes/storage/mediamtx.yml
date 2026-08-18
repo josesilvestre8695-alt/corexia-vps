@@ -1,0 +1,37 @@
+###############################################
+# MediaMTX - Corexia (rtmoserver / 10.93.0.122)
+# RTMP ingest + HLS + RTSP + gravacao 24/7 no /gravacoes (54TB).
+# Config minima: chaves nao listadas usam os defaults do binario.
+###############################################
+
+# API de controle EXPOSTA NA REDE (o alerta de camera offline do VPS consulta /v3/paths/list)
+api: yes
+apiAddress: :9997
+
+# RTMP - cameras publicam em rtmp://10.93.0.122:1935/cam/<stream_key>
+# (o redirect 1936->1935 no iptables cobre quem publica na 1936, como no Xeon antigo)
+rtmp: yes
+rtmpAddress: :1935
+
+# RTSP - a IA (126) le daqui: rtsp://10.93.0.122:8554/cam/<stream_key>
+rtsp: yes
+rtspAddress: :8554
+
+# HLS - visualizacao ao vivo
+hls: yes
+hlsAddress: :8888
+hlsAllowOrigin: '*'
+
+# Gravacao 24/7 de TUDO que publicar (segmentos de ~1h), gravando primeiro num staging;
+# o hook joga cada segmento pronto em /gravacoes/<Cliente>/<semana>/<dia>/.
+pathDefaults:
+  record: yes
+  recordPath: /gravacoes/_staging/%path/%Y-%m-%d_%H-%M-%S-%f
+  recordFormat: fmp4
+  recordPartDuration: 1s
+  recordSegmentDuration: 15m
+  recordDeleteAfter: 0s
+  runOnRecordSegmentComplete: /opt/corexia/rec_organize.sh
+
+paths:
+  all_others:

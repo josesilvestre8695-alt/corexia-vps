@@ -1,0 +1,19 @@
+[Unit]
+Description=Corexia Vigia NVDEC worker %i (GPU %i)
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+User=corexia
+WorkingDirectory=/home/corexia/corexia-ia
+EnvironmentFile=/home/corexia/corexia-ia/.env
+Environment=PYTHONUNBUFFERED=1
+Environment=CUDA_VISIBLE_DEVICES=
+Environment=WORKER_GPU=%i
+Environment=WORKER_ID=%i
+Environment=WORKER_COUNT=2
+ExecStart=/home/corexia/corexia-ia/env/bin/python /home/corexia/corexia-ia/detector_nvdec.py
+Restart=always
+RestartSec=8
+[Install]
+WantedBy=multi-user.target

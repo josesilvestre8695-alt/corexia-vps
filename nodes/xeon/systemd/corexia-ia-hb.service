@@ -1,0 +1,6 @@
+[Unit]
+Description=Corexia IA health heartbeat -> VPS
+[Service]
+Type=oneshot
+User=corexia
+ExecStart=/usr/bin/python3 /home/corexia/corexia-ia/ia_hb.py

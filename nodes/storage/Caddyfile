@@ -1,0 +1,19 @@
+# Media edge Corexia: HLS ao vivo + gravacoes (URL assinada), por HTTPS.
+media.grupocorexia.com.br {
+	encode gzip
+	@dl query dl=1
+	header @dl Content-Disposition attachment
+	handle /rec/* {
+		route {
+			forward_auth https://grupocorexia.com.br {
+				uri /api/rec-ok
+			}
+			uri strip_prefix /rec
+			root * /gravacoes
+			file_server browse
+		}
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8888
+	}
+}
