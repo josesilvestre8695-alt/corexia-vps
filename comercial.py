@@ -328,6 +328,7 @@ __COMNAV__
    var role='';
    try{var p=await api('GET','/api/comercial/ping'); role=p.user.role; $('who').textContent=p.user.email+' - '+role; try{var _av=$('avatar'); if(_av)_av.textContent=((p.user.email||'A').charAt(0)||'A').toUpperCase();}catch(e){}}catch(e){$('authwarn').style.display='block';return;}
    document.querySelectorAll('[data-roles]').forEach(function(el){ if(((el.getAttribute('data-roles')||'').split(',').indexOf(role))<0) el.style.display='none'; });
+   try{ if(!(p.user&&p.user.conciliacao_habilitada)){ var _cc=document.querySelector('a[href="/provedor/conciliacao"]'); if(_cc)_cc.style.display='none'; } }catch(e){}
    $('app').style.display='block'; if(window.PAGE_INIT) window.PAGE_INIT(); })();
 </script></body></html>"""
 
@@ -339,7 +340,7 @@ def _shell(active, titulo, body):
     html = (_SHELL_TPL.replace("__TITULO__", titulo)
             .replace("__COMNAV__", com_nav)
             .replace("__BODY__", body))
-    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"})
 
 
 # ---------- paginas ----------
@@ -442,6 +443,7 @@ _PROV_ITENS = [
     ("propostas", "Propostas", "Propostas"),
     ("planos", "Planos", "Meus Planos"),
     ("faturas", "Cobranca", "Cobranca"),
+    ("conciliacao", "Conciliacao", "Conciliação de Carteira"),
     ("cameras", "Cameras e IA", "Cameras e Analiticos"),
     ("gravacoes", "Gravacoes", "Gravacoes em Nuvem"),
     ("alertas", "Alertas", "Alertas"),
@@ -501,7 +503,7 @@ def _prov_shell(active, titulo, body, req=None):
     html = (_SHELL_TPL.replace("__TITULO__", titulo).replace("__COMNAV__", nav).replace("__BODY__", body)
             .replace('<div class="sec">Comercial</div>', '<div class="sec">Painel Operacional</div>')
             .replace("</body>", _PROV_WL_JS + _PANEL_SWITCHER_JS + "</body>"))
-    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"})
 
 
 def _prov_req(req):
@@ -557,17 +559,329 @@ def prov_plantao_page(req: Request):
     return _prov_shell("plantao", "Plantao (WhatsApp, req)", _PROV_PLANTAO_BODY)
 
 
-def _monit_shell(body):
-    nav = '<a class="it active" href="/monitoramento">Mural ao vivo</a>'
+_MAPA_BODY = """
+<div id="msg" class="msg"></div>
+<div class="cards" style="margin-bottom:12px">
+ <div class="kpi"><div class="k">Cameras</div><div class="v" id="k_cams">-</div></div>
+ <div class="kpi"><div class="k">Online</div><div class="v" id="k_on" style="color:var(--ok)">-</div></div>
+ <div class="kpi"><div class="k">No mapa</div><div class="v" id="k_map">-</div></div>
+</div>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+ <b>Mapa de Câmeras</b>
+ <span style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+  <span style="font-size:12px;color:var(--muted)"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#10b981;margin-right:4px;vertical-align:middle"></span>online<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#64748b;margin:0 5px 0 12px;vertical-align:middle"></span>offline</span>
+  <span id="mapinfo" style="font-size:12px;color:var(--muted)"></span>
+  <button onclick="load()">Atualizar</button>
+ </span>
+</div>
+<div id="mapbox" style="height:calc(100vh - 250px);min-height:460px;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--surface)"><div class="center" style="padding:30px">carregando...</div></div>
+<div class="ov" id="ovlive"><div class="modal" style="max-width:900px;width:100%">
+ <h2 style="display:flex;align-items:center;gap:10px"><span id="lv_nome"></span><span style="flex:1"></span><button onclick="fecharLive()">Fechar</button></h2>
+ <div style="position:relative;padding-top:56.25%;background:#000;border-radius:8px;overflow:hidden"><iframe id="lv_frame" src="about:blank" allow="autoplay; fullscreen" style="position:absolute;inset:0;width:100%;height:100%;border:0"></iframe></div>
+ <div style="font-size:12px;color:var(--muted);margin-top:8px">Se nao carregar, <a id="lv_link" href="#" target="_blank" rel="noopener" style="color:var(--accent)">abra em nova aba</a>.</div>
+</div></div>
+<style>.leaflet-popup-content{color:#111}</style>
+<script>
+window.PAGE_INIT=load;
+var CAMS=[], MAP=null, MARKERS=null;
+async function load(){ try{
+  var d=await api('GET','/api/comercial/prov/cameras'); CAMS=d.cameras||[];
+  $('k_cams').textContent=CAMS.length;
+  $('k_on').textContent=CAMS.filter(function(c){return (c.status||'').toLowerCase()==='online';}).length;
+  $('k_map').textContent=CAMS.filter(function(c){return c.latitude&&c.longitude;}).length;
+  initMap();
+ }catch(e){ msg('Erro (logado como provedor?): '+e.message); } }
+function ver(id){ var c=CAMS.filter(function(x){return x.id===id})[0]; if(!c)return; if(!c.embed_url){msg('Camera sem player.');return;} $('lv_nome').textContent=c.nome||''; $('lv_frame').src=c.embed_url; $('lv_link').href=c.embed_url; $('ovlive').classList.add('open'); }
+function fecharLive(){ $('ovlive').classList.remove('open'); $('lv_frame').src='about:blank'; }
+function initMap(){
+ var pts=CAMS.filter(function(c){return c.latitude&&c.longitude;}); var box=$('mapbox'); var semc=CAMS.length-pts.length;
+ var info=$('mapinfo'); if(info) info.textContent=pts.length+' no mapa'+(semc>0?(' · '+semc+' sem coordenadas'):'');
+ loadLeaflet(function(){
+  if(!MAP){ box.innerHTML=''; MAP=L.map(box); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'}).addTo(MAP); }
+  if(MARKERS){ try{ MAP.removeLayer(MARKERS); }catch(e){} MARKERS=null; }
+  if(!pts.length){ MAP.setView([-8.05,-34.9],11); return; }
+  var canCl=!!(window.L && L.markerClusterGroup);
+  MARKERS = canCl ? L.markerClusterGroup({maxClusterRadius:44, iconCreateFunction:function(cl){
+    var ms=cl.getAllChildMarkers(), anyOn=false; for(var i=0;i<ms.length;i++){ if(ms[i].options._on){anyOn=true;break;} }
+    var col=anyOn?'#10b981':'#64748b';
+    return L.divIcon({html:'<div style="background:'+col+';color:#fff;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 13px system-ui;border:2px solid #fff;box-shadow:0 0 0 2px rgba(0,0,0,.35)">'+cl.getChildCount()+'</div>', className:'', iconSize:[34,34]});
+  }}) : L.layerGroup();
+  pts.forEach(function(c){
+   var on=(c.status||'').toLowerCase()==='online'; var col=on?'#10b981':'#64748b';
+   var icon=L.divIcon({className:'', html:'<span style="display:block;width:16px;height:16px;border-radius:50%;background:'+col+';border:2px solid #fff;box-shadow:0 0 0 2px rgba(0,0,0,.4)"></span>', iconSize:[16,16], iconAnchor:[8,8], popupAnchor:[0,-9]});
+   var m=L.marker([c.latitude,c.longitude],{icon:icon, _on:on});
+   m.bindPopup(popupCam(c),{minWidth:224});
+   MARKERS.addLayer(m);
+  });
+  MAP.addLayer(MARKERS);
+  try{ MAP.fitBounds(L.latLngBounds(pts.map(function(c){return [c.latitude,c.longitude];})).pad(0.25),{maxZoom:16}); }catch(e){ MAP.setView([pts[0].latitude,pts[0].longitude],13); }
+  setTimeout(function(){ try{MAP.invalidateSize();}catch(e){} },250);
+ });
+}
+function popupCam(c){
+ var on=(c.status||'').toLowerCase()==='online';
+ var addr=[c.endereco,c.bairro,c.cidade].filter(function(x){return x;}).join(', ');
+ return '<div style="min-width:210px;font-family:system-ui">'+
+  '<img src="/camthumb/'+c.id+'?t='+encodeURIComponent(TOKEN)+'" style="width:210px;max-width:100%;height:118px;object-fit:cover;border-radius:8px;background:#0b0d12;display:block;margin-bottom:7px" onerror="this.remove()">'+
+  '<div style="font:700 14px system-ui;color:#111;margin-bottom:2px">'+esc(c.nome||'-')+'</div>'+
+  (c.cliente_nome?'<div style="font-size:12px;color:#555">'+esc(c.cliente_nome)+'</div>':'')+
+  (addr?'<div style="font-size:12px;color:#555;margin:2px 0 5px">'+esc(addr)+'</div>':'')+
+  '<div style="font-size:12px;color:#333;margin-bottom:8px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+(on?'#10b981':'#94a3b8')+';margin-right:5px;vertical-align:middle"></span>'+(on?'Online':'Offline')+'</div>'+
+  '<button onclick="ver(&#39;'+c.id+'&#39;)" style="background:#f97316;color:#111;border:0;border-radius:7px;padding:8px 12px;font:700 12px system-ui;cursor:pointer;width:100%">&#9654; Ver ao vivo</button>'+
+ '</div>';
+}
+function loadLeaflet(cb){
+ if(window.L){ _cxCluster(cb); return; }
+ var css=document.createElement('link'); css.rel='stylesheet'; css.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(css);
+ var s=document.createElement('script'); s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+ s.onload=function(){ _cxCluster(cb); };
+ s.onerror=function(){ var b=$('mapbox'); if(b)b.innerHTML='<div class="center" style="padding:30px;color:var(--muted)">Nao foi possivel carregar o mapa (sem internet?).</div>'; };
+ document.body.appendChild(s);
+}
+function _cxCluster(cb){
+ if(window.L && L.markerClusterGroup){ cb(); return; }
+ var c1=document.createElement('link'); c1.rel='stylesheet'; c1.href='https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css'; document.head.appendChild(c1);
+ var c2=document.createElement('link'); c2.rel='stylesheet'; c2.href='https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css'; document.head.appendChild(c2);
+ var sc=document.createElement('script'); sc.src='https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js';
+ sc.onload=cb; sc.onerror=cb; document.body.appendChild(sc);
+}
+</script>
+"""
+
+
+_BUSCA_BODY = """
+<div class="bx-head">
+ <h1 class="bx-title">Pergunte ao Corexia</h1>
+ <p class="bx-sub">Busca por linguagem natural dentro das gravações. Escolha a câmera, o dia e o(s) trecho(s), descreva o que procura — a IA varre os quadros e traz só os momentos que correspondem. <span class="bx-beta">Fase 1 · beta</span></p>
+</div>
+<div id="msg" class="msg"></div>
+
+<div class="bx-controls">
+ <div class="bx-fld"><label>Câmera</label><select id="b_cam" onchange="onCam()"><option value="">carregando...</option></select></div>
+ <div class="bx-fld"><label>Dia</label><select id="b_dia" onchange="onDia()"><option value="">-</option></select></div>
+ <div class="bx-fld"><label>Precisão</label><select id="b_prec"><option value="rapido">Rápida (mais veloz)</option><option value="normal" selected>Normal</option><option value="minucioso">Minuciosa (mais lenta)</option></select></div>
+</div>
+
+<div id="b_trechos" class="bx-trbox"><div class="bx-muted">Escolha a câmera e o dia para listar os trechos.</div></div>
+
+<div class="bx-ask">
+ <input id="b_q" placeholder="Pergunte ao Corexia...  ex: moto com mochila amarela, pessoa de camisa vermelha, carro branco">
+ <button class="btn-primary bx-go" onclick="buscar()">Buscar</button>
+</div>
+<div class="bx-chips">
+ <span class="bx-chip" onclick="$('b_q').value=this.getAttribute('data-q');$('b_q').focus()" data-q="moto com mochila amarela">moto com mochila amarela</span>
+ <span class="bx-chip" onclick="$('b_q').value=this.getAttribute('data-q');$('b_q').focus()" data-q="pessoa de camisa vermelha">pessoa de camisa vermelha</span>
+ <span class="bx-chip" onclick="$('b_q').value=this.getAttribute('data-q');$('b_q').focus()" data-q="carro branco">carro branco</span>
+ <span class="bx-chip" onclick="$('b_q').value=this.getAttribute('data-q');$('b_q').focus()" data-q="pessoa com capacete">pessoa com capacete</span>
+</div>
+
+<div id="b_prog" class="bx-prog"></div>
+<div id="b_res" class="bx-grid"></div>
+
+<div class="ov" id="ovbv"><div class="modal" style="max-width:900px;width:100%">
+ <h2 style="display:flex;align-items:center;gap:10px"><span>Trecho</span><span id="bv_ts" style="color:var(--muted);font-size:14px;font-family:var(--mono)"></span><span style="flex:1"></span><a id="bv_link" href="#" target="_blank" rel="noopener" style="color:var(--accent);font-size:13px">baixar/abrir</a><button onclick="fecharV()">Fechar</button></h2>
+ <div id="bv_body"></div>
+ <div style="font-size:12px;color:var(--muted);margin-top:8px">Recorte de ~12s ao redor do momento encontrado.</div>
+</div></div>
+
+<style>
+.bx-head{margin-bottom:14px}
+.bx-title{font-size:22px;margin:0 0 4px;display:flex;align-items:center;gap:10px}
+.bx-sub{color:var(--muted);font-size:13.5px;max-width:760px;margin:0;line-height:1.5}
+.bx-beta{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);border:1px solid rgba(249,115,22,.4);border-radius:999px;padding:2px 8px;margin-left:2px}
+.bx-controls{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.bx-fld{display:flex;flex-direction:column;gap:5px;min-width:180px;flex:1}
+.bx-fld label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.bx-fld select{background:var(--surface2);border:1px solid var(--border);border-radius:calc(var(--radius) - 4px);color:var(--ink);padding:10px 12px;font-size:14px;cursor:pointer}
+.bx-fld select:focus{outline:none;border-color:var(--accent)}
+.bx-trbox{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:14px;max-height:200px;overflow:auto}
+.bx-all{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--ink);cursor:pointer;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.bx-all input,.bx-tr input{width:auto}
+.bx-trechos{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px 14px}
+.bx-tr{display:flex;gap:7px;align-items:center;font-size:13px;color:var(--ink);cursor:pointer}
+.bx-tr b{font-family:var(--mono);font-size:12.5px}
+.bx-tr span{color:var(--muted);font-size:11px}
+.bx-muted{color:var(--muted);font-size:13px}
+.bx-ask{display:flex;gap:10px;margin-bottom:8px}
+.bx-ask input{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--ink);padding:14px 16px;font-size:15px}
+.bx-ask input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(249,115,22,.12)}
+.bx-go{padding:0 26px;font-size:15px;white-space:nowrap}
+.bx-chips{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px}
+.bx-chip{font-size:12px;padding:5px 12px;border-radius:999px;border:1px dashed var(--border);color:var(--muted);cursor:pointer;user-select:none;transition:all .14s}
+.bx-chip:hover{border-style:solid;border-color:var(--accent);color:var(--ink)}
+.bx-prog{margin-bottom:14px}
+.bx-run{display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--ink)}
+.bx-spin{width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;display:inline-block;animation:bxsp .8s linear infinite}
+@keyframes bxsp{to{transform:rotate(360deg)}}
+.bx-cancel{font-size:11px;padding:4px 10px;margin-left:6px}
+.bx-bar{height:6px;background:var(--surface2);border-radius:999px;overflow:hidden;margin-top:8px}
+.bx-bar i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),#fdba74);transition:width .3s}
+.bx-done{font-size:13.5px;color:var(--ok)}
+.bx-err{font-size:13.5px;color:var(--bad);background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.4);border-radius:10px;padding:10px 14px}
+.bx-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px}
+.bx-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column}
+.bx-thumb{position:relative;padding-top:56.25%;background:#0b0d12;cursor:pointer}
+.bx-thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.bx-pct{position:absolute;top:8px;right:8px;font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;background:rgba(16,120,60,.9);border:1px solid rgba(52,211,153,.6);color:#eafff2;backdrop-filter:blur(4px)}
+.bx-info{padding:9px 12px 4px;display:flex;flex-direction:column;gap:2px}
+.bx-info b{font-family:var(--mono);font-size:14px}
+.bx-info span{color:var(--muted);font-size:11.5px}
+.bx-ver{margin:8px 12px 12px;font-size:12px;padding:8px 10px;border-radius:calc(var(--radius) - 5px)}
+@media(max-width:640px){.bx-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}.bx-ask{flex-direction:column}}
+</style>
+<script>
+window.PAGE_INIT = bInit;
+var CAMS=[], TRECHOS=[], JOB=null, POLL=null, RENDERED=0;
+async function bInit(){
+  var d=$('b_res'); if(d){ d.addEventListener('click', function(ev){ var card=ev.target.closest('.bx-card'); if(!card)return; verTrecho(card.getAttribute('data-clip'), card.getAttribute('data-ts')); }); }
+  try{ CAMS = await api('GET','/api/busca/cameras'); }catch(e){ CAMS=[]; }
+  var sel=$('b_cam');
+  if(!CAMS.length){ sel.innerHTML='<option value="">(nenhuma câmera com gravação)</option>'; return; }
+  sel.innerHTML='<option value="">Selecione a câmera...</option>'+CAMS.map(function(c){ return '<option value="'+esc(c.camera_id)+'">'+esc(c.camera_nome||c.camera_id)+'</option>'; }).join('');
+}
+function onCam(){
+  var id=$('b_cam').value; var c=CAMS.filter(function(x){return x.camera_id===id})[0];
+  var d=$('b_dia'); TRECHOS=[]; $('b_trechos').innerHTML='<div class="bx-muted">Escolha o dia para listar os trechos.</div>';
+  if(!c){ d.innerHTML='<option value="">-</option>'; return; }
+  d.innerHTML='<option value="">Selecione o dia...</option>'+(c.dias||[]).map(function(x){ return '<option value="'+esc(x)+'">'+esc(x)+'</option>'; }).join('');
+}
+async function onDia(){
+  var id=$('b_cam').value, data=$('b_dia').value, box=$('b_trechos');
+  TRECHOS=[]; if(!id||!data){ box.innerHTML='<div class="bx-muted">Escolha a câmera e o dia.</div>'; return; }
+  box.innerHTML='<div class="bx-muted">carregando trechos...</div>';
+  try{ TRECHOS = await api('GET','/api/gravacoes?camera_id='+encodeURIComponent(id)+'&data='+encodeURIComponent(data)); }
+  catch(e){ box.innerHTML='<div class="bx-muted">erro ao carregar trechos</div>'; return; }
+  if(!TRECHOS.length){ box.innerHTML='<div class="bx-muted">sem trechos gravados nesse dia</div>'; return; }
+  var h='<label class="bx-all"><input type="checkbox" id="b_all" onchange="toggleAll()"> Selecionar todos (máx 8 trechos por busca)</label><div class="bx-trechos">';
+  h+=TRECHOS.map(function(t){ return '<label class="bx-tr"><input type="checkbox" class="b_tr" value="'+esc(t.arquivo)+'"> <b>'+esc(t.inicio)+'</b> <span>'+esc(String(t.tamanho_mb||0))+'MB</span></label>'; }).join('');
+  box.innerHTML=h+'</div>';
+}
+function toggleAll(){ var on=$('b_all').checked, n=0; document.querySelectorAll('.b_tr').forEach(function(e){ if(on&&n>=8){ e.checked=false; } else { e.checked=on; if(on)n++; } }); }
+function selArquivos(){ var out=[]; document.querySelectorAll('.b_tr').forEach(function(e){ if(e.checked)out.push(e.value); }); return out.slice(0,8); }
+async function buscar(){
+  var id=$('b_cam').value, data=$('b_dia').value, q=($('b_q').value||'').trim(), prec=$('b_prec').value;
+  if(!id||!data){ msg('Escolha câmera e dia.'); return; }
+  var arqs=selArquivos();
+  if(!arqs.length){ msg('Selecione ao menos 1 trecho.'); return; }
+  if(!q){ msg('Escreva o que você procura.'); return; }
+  stopPoll(); $('b_res').innerHTML=''; RENDERED=0;
+  $('b_prog').innerHTML='<div class="bx-run"><span class="bx-spin"></span> Iniciando busca...</div>';
+  try{ var r=await api('POST','/api/busca/iniciar',{camera_id:id,data:data,arquivos:arqs,query:q,precisao:prec}); JOB=r.job_id; }
+  catch(e){ $('b_prog').innerHTML=''; msg('Erro: '+(e&&e.message||e)); return; }
+  poll();
+}
+function stopPoll(){ if(POLL){ clearTimeout(POLL); POLL=null; } }
+async function poll(){
+  if(!JOB) return; var s;
+  try{ s=await api('GET','/api/busca/status?job='+encodeURIComponent(JOB)); }
+  catch(e){ $('b_prog').innerHTML='<div class="bx-run">reconectando...</div>'; POLL=setTimeout(poll,2000); return; }
+  renderProg(s); renderRes(s);
+  if(s.status==='running'){ POLL=setTimeout(poll,1600); } else { finalize(s); }
+}
+function renderProg(s){
+  if(s.status!=='running') return;
+  var pct=s.total?Math.round(100*s.processed/s.total):0;
+  $('b_prog').innerHTML='<div class="bx-run"><span class="bx-spin"></span> Analisando '+(s.processed||0)+(s.total?(' de '+s.total):'')+' quadros — <b>'+(s.found||0)+'</b> encontrado(s) <button class="bx-cancel" onclick="cancelar()">parar</button></div><div class="bx-bar"><i style="width:'+pct+'%"></i></div>';
+}
+function renderRes(s){
+  var res=s.results||[]; if(res.length<=RENDERED) return; var enc=encodeURIComponent(TOKEN);
+  var add=res.slice(RENDERED).map(function(m){
+    var thumb='/api/busca/frame?job='+encodeURIComponent(JOB)+'&f='+encodeURIComponent(m.frame)+'&t='+enc;
+    return '<div class="bx-card" data-clip="'+esc(m.clip_url)+'" data-ts="'+esc(m.ts)+'">'+
+      '<div class="bx-thumb"><img src="'+thumb+'" loading="lazy"><span class="bx-pct">'+(m.conf||0)+'%</span></div>'+
+      '<div class="bx-info"><b>'+esc(m.ts)+'</b>'+(m.motivo?'<span>'+esc(m.motivo)+'</span>':'')+'</div>'+
+      '<button class="bx-ver">ver trecho</button></div>';
+  }).join('');
+  $('b_res').insertAdjacentHTML('beforeend', add); RENDERED=res.length;
+}
+function finalize(s){
+  stopPoll();
+  if(s.erro){ $('b_prog').innerHTML='<div class="bx-err">'+esc(s.erro)+'</div>'; return; }
+  var n=(s.results||[]).length, extra=(s.msgs&&s.msgs.length)?(' · '+s.msgs.join(' · ')):'';
+  $('b_prog').innerHTML='<div class="bx-done">'+(s.mode==='instant'?'<span style="color:var(--accent)">&#9889; instantaneo</span> &#183; ':'')+'Busca concluída — <b>'+n+'</b> resultado(s) para "'+esc(s.query||'')+'"'+esc(extra)+'</div>';
+  if(!n) $('b_res').innerHTML='<div class="bx-muted" style="grid-column:1/-1">Nada encontrado nesse(s) trecho(s). Tente descrever de outro jeito, ou aumente a precisão.</div>';
+}
+async function cancelar(){ if(!JOB)return; try{ await api('POST','/api/busca/cancelar',{job:JOB}); }catch(e){} }
+function verTrecho(url,ts){
+  $('bv_ts').textContent=ts||'';
+  $('bv_body').innerHTML='<video src="'+esc(url)+'" controls autoplay playsinline style="width:100%;max-height:70vh;background:#000;border-radius:8px"></video>';
+  $('bv_link').href=url; $('ovbv').classList.add('open');
+}
+function fecharV(){ $('ovbv').classList.remove('open'); $('bv_body').innerHTML=''; }
+</script>
+"""
+
+
+def _monit_shell(body, active="mural"):
+    nav = ('<a class="it%s" href="/monitoramento">Mural ao vivo</a>' % (" active" if active=="mural" else "")
+           + '<a class="it%s" href="/monitoramento/mapa">Mapa de câmeras</a>' % (" active" if active=="mapa" else "")
+           + '<a class="it%s" href="/monitoramento/busca">Pergunte ao Corexia</a>' % (" active" if active=="busca" else ""))
     html = (_SHELL_TPL.replace("__TITULO__", "Monitoramento").replace("__COMNAV__", nav).replace("__BODY__", body)
             .replace('<div class="sec">Comercial</div>', '<div class="sec">Monitoramento</div>')
             .replace("</body>", _PROV_WL_JS + _PANEL_SWITCHER_JS + "</body>"))
-    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"})
 
 
 @router.get("/monitoramento")
 def monit_page(req: Request):
     return _monit_shell(_MONIT_BODY)
+
+
+@router.get("/monitoramento/mapa")
+def monit_mapa_page(req: Request):
+    return _monit_shell(_MAPA_BODY, "mapa")
+
+
+@router.get("/monitoramento/busca")
+def monit_busca_page(req: Request):
+    return _monit_shell(_BUSCA_BODY, "busca")
+
+
+_BUSCA_CLI_TPL = """<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pergunte ao Corexia</title>
+<style>
+:root{--bg:#0b0d12;--surface:#12151c;--surface2:#171b24;--border:#262c38;--ink:#e6eaf0;--muted:#8b95a7;--accent:#f97316;--ok:#34d399;--bad:#f87171;--radius:12px;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px}
+.topbar{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:5}
+.topbar .brand{font-weight:800;letter-spacing:.5px}
+.topbar .brand b{color:var(--accent)}
+.topbar a.bk{margin-left:auto;color:var(--accent);text-decoration:none;font-size:13px}
+.wrap{max-width:1100px;margin:0 auto;padding:20px 18px 90px}
+.msg{font-size:13px;min-height:18px;margin:6px 0}.msg.ok{color:var(--ok)}.msg.err{color:var(--bad)}
+button{cursor:pointer;background:var(--surface2);color:var(--ink);border:1px solid var(--border);border-radius:9px;padding:9px 14px;font-size:14px}
+button:hover{border-color:var(--accent)}
+.btn-primary{background:var(--accent);color:#1a1205;border:none;font-weight:700}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.62);display:none;align-items:center;justify-content:center;z-index:60;padding:18px}
+.ov.open{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;max-height:92vh;overflow:auto}
+.modal h2{margin:0 0 12px;font-size:17px}
+input,select{font-family:inherit}
+a{color:var(--accent)}
+</style></head>
+<body>
+<div class="topbar"><div class="brand">COREXIA <b>&#183; Pergunte</b></div><a class="bk" href="/portal">&larr; Voltar ao painel</a></div>
+<div class="wrap">__BODY__</div>
+<script>
+var TOKEN=localStorage.getItem('corexia_token')||new URLSearchParams(location.search).get('t')||'';
+if(!TOKEN){ location.href='/portal'; }
+function $(id){return document.getElementById(id);}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function msg(t,ok){var m=$('msg');if(!m)return;m.textContent=t;m.className='msg '+(ok?'ok':'err');if(ok)setTimeout(function(){var e=$('msg');if(e){e.textContent='';e.className='msg';}},3500);}
+async function api(m,p,b){var r=await fetch(p,{method:m,headers:{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
+ if(!r.ok){var tx='';try{var j=await r.json();tx=j&&j.error?j.error:'';}catch(e){}throw new Error(tx||('HTTP '+r.status));}
+ var ct=r.headers.get('content-type')||'';return ct.indexOf('json')>=0?r.json():r.text();}
+window.addEventListener('DOMContentLoaded',function(){if(window.PAGE_INIT){try{window.PAGE_INIT();}catch(e){}}});
+</script>
+</body></html>"""
+
+
+def _busca_cli_page():
+    return HTMLResponse(_BUSCA_CLI_TPL.replace("__BODY__", _BUSCA_BODY), headers={"Cache-Control": "no-cache"})
+
+
+@router.get("/portal/busca")
+def portal_busca_page(req: Request):
+    return _busca_cli_page()
 
 
 @router.get("/provedor/gravacoes")
@@ -1230,6 +1544,8 @@ def prov_equipe_page(req: Request):
 
 @router.get("/provedor/{slug}")
 def prov_generico(slug: str, req: Request):
+    if slug == "conciliacao":
+        return prov_conciliacao_page(req)
     titulo = next((t for s, l, t in _PROV_ITENS if s == slug), slug)
     body = ('<div class="center" style="padding:70px"><div style="font-size:18px;color:var(--ink);margin-bottom:8px">%s</div>'
             '<div>Em construcao - proxima entrega.</div></div>' % titulo)
@@ -1419,6 +1735,7 @@ IA_MODULOS = [
 GRAV_TIERS = [{"dias": 1, "valor": 9.97}, {"dias": 3, "valor": 14.97}, {"dias": 5, "valor": 20.0},
               {"dias": 7, "valor": 24.97}, {"dias": 15, "valor": 39.97}, {"dias": 30, "valor": 69.97},
               {"dias": 60, "valor": 129.97}, {"dias": 90, "valor": 179.97}, {"dias": 366, "valor": 597.97}]
+PRECO_BUSCA_IA = 5.97   # "Pergunte ao Corexia" (busca semantica em gravacoes) por camera/mes
 
 
 def _plano_do_prov(pid):
@@ -1529,6 +1846,7 @@ def prov_cameras_api(req: Request):
                     "rtsp_src": (o.get("rtsp_url", "") if proto == "rtsp" else ""),
                     "exclusao_pendente": bool(o.get("exclusao_pendente")),
                     "dias_gravacao": int(o.get("dias_gravacao", 0) or 0),
+                    "busca_ia": bool(o.get("busca_ia")),
                     "config": cfgs.get(r["id"])})
     out.sort(key=lambda x: (x["nome"] or "").lower())
     return {"plano_id": prov.get("plano_id", ""), "plano_nome": prov.get("plano_nome", "") or plano.get("nome", ""),
@@ -1615,6 +1933,23 @@ async def prov_camera_gravacao(cid: str, req: Request):
     cam2 = _get_ent("Camera", cid) or {}
     ativa = _mediamtx_set_record(cam2.get("stream_key"), dias)
     return {"success": True, "dias": dias, "valor": _grav_valor(dias), "gravacao_ativa": ativa}
+
+
+@router.post("/api/comercial/prov/cameras/{cid}/busca")
+async def prov_camera_busca(cid: str, req: Request):
+    u, pid = _prov_req(req)
+    if not pid:
+        return JSONResponse({"error": "sem permissao"}, status_code=403)
+    if not _prov_camera_own(pid, cid):
+        return JSONResponse({"error": "camera nao encontrada ou sem acesso"}, status_code=403)
+    b = await req.json()
+    ativo = bool(b.get("ativo"))
+    if ativo:
+        cam = _get_ent("Camera", cid) or {}
+        if int(cam.get("dias_gravacao", 0) or 0) <= 0:
+            return JSONResponse({"error": "ative a gravacao em nuvem nesta camera primeiro (a busca procura dentro das gravacoes)"}, status_code=400)
+    _update_ent("Camera", cid, {"busca_ia": ativo})
+    return {"success": True, "busca_ia": ativo, "valor": PRECO_BUSCA_IA if ativo else 0.0}
 
 
 @router.get("/api/comercial/prov/gravacoes")
@@ -1740,11 +2075,14 @@ def _custo_provedor(pid):
                 grav_cams += 1
                 grav_total += dv
     grav_total = round(grav_total, 2)
-    total = round(painel + ia_total + grav_total, 2)
+    busca_cams = sum(1 for _c, o in my if o.get("busca_ia"))
+    busca_total = round(busca_cams * PRECO_BUSCA_IA, 2)
+    total = round(painel + ia_total + grav_total + busca_total, 2)
     return {"plano_nome": prov.get("plano_nome", "") or plano.get("nome", ""), "gravacao": gravacao,
             "cameras": ncams, "painel": round(painel, 2), "painel_desc": painel_desc,
             "ia_total": ia_total, "ia_detalhe": ia_detalhe,
-            "grav_total": grav_total, "grav_cams": grav_cams, "total": total}
+            "grav_total": grav_total, "grav_cams": grav_cams,
+            "busca_total": busca_total, "busca_cams": busca_cams, "total": total}
 
 
 @router.get("/api/comercial/prov/custo")
@@ -2167,18 +2505,44 @@ def geocode_cep(req: Request):
     except Exception as e:
         return JSONResponse({"error": "ViaCEP: " + str(e)[:80]}, status_code=502)
     hdr = {"User-Agent": "CorexiaGeocoder/1.0 (contato@grupocorexia.com.br)"}
+    def _num(x):
+        try:
+            return float(x)
+        except Exception:
+            return None
+    # 1) BrasilAPI v2 — traz coordenadas do CEP direto (mais confiavel p/ Brasil)
     try:
-        q = ", ".join([x for x in [out["logradouro"], out["bairro"], out["cidade"], out["uf"], "Brasil"] if x])
-        gj = _rq.get("https://nominatim.openstreetmap.org/search",
-                     params={"format": "json", "limit": 1, "q": q}, headers=hdr, timeout=10).json()
-        if not gj:
-            gj = _rq.get("https://nominatim.openstreetmap.org/search",
-                         params={"format": "json", "limit": 1, "postalcode": cep, "country": "Brazil"},
-                         headers=hdr, timeout=10).json()
-        if gj:
-            out["latitude"] = float(gj[0]["lat"]); out["longitude"] = float(gj[0]["lon"])
+        ba = _rq.get("https://brasilapi.com.br/api/cep/v2/%s" % cep, timeout=8).json()
+        loc = (ba.get("location") or {}).get("coordinates") or {}
+        la = _num(loc.get("latitude")); lo = _num(loc.get("longitude"))
+        if la is not None and lo is not None:
+            out["latitude"] = la; out["longitude"] = lo
+        if not out["logradouro"] and ba.get("street"):
+            out["logradouro"] = ba.get("street", "")
+        if not out["bairro"] and ba.get("neighborhood"):
+            out["bairro"] = ba.get("neighborhood", "")
     except Exception:
         pass
+    # 2) fallback: Nominatim (endereco -> CEP -> cidade)
+    if out["latitude"] is None:
+        tries = []
+        q = ", ".join([x for x in [out["logradouro"], out["bairro"], out["cidade"], out["uf"], "Brasil"] if x])
+        if q:
+            tries.append({"format": "json", "limit": 1, "q": q})
+        tries.append({"format": "json", "limit": 1, "postalcode": cep, "country": "Brazil"})
+        if out["cidade"]:
+            tries.append({"format": "json", "limit": 1, "city": out["cidade"], "state": out["uf"], "country": "Brazil"})
+        for params in tries:
+            try:
+                gj = _rq.get("https://nominatim.openstreetmap.org/search", params=params, headers=hdr, timeout=10).json()
+            except Exception:
+                gj = None
+            if gj:
+                try:
+                    out["latitude"] = float(gj[0]["lat"]); out["longitude"] = float(gj[0]["lon"])
+                    break
+                except Exception:
+                    pass
     return out
 
 
@@ -2571,7 +2935,8 @@ def com_ping(req: Request):
     if not u:
         return JSONResponse({"ok": False, "error": "nao autenticado"}, status_code=401)
     return {"ok": True, "user": {"email": u["email"], "role": u["role"],
-            "provedor_id": u["provedor_id"] or "", "cliente_id": u["cliente_id"] or ""},
+            "provedor_id": u["provedor_id"] or "", "cliente_id": u["cliente_id"] or "",
+            "conciliacao_habilitada": bool(_wallet_enabled(u["provedor_id"] or ""))},
             "asaas_live": ASAAS_LIVE}
 
 
@@ -2981,6 +3346,224 @@ _ASAAS_ST = {"RECEIVED": "paga", "CONFIRMED": "paga", "RECEIVED_IN_CASH": "paga"
              "REFUNDED": "cancelada", "DELETED": "cancelada", "CHARGEBACK_REQUESTED": "vencida"}
 
 
+# ==================== CONCILIACAO DE CARTEIRA (exclusiva por flag, ex.: Viggia) ====================
+def _prov_itens_for(req):
+    base = list(_PROV_ITENS)
+    try:
+        u = _current_user(req) if req is not None else None
+        pid = (u.get("provedor_id") if u else "") or ""
+        on = bool((_get_ent("Provedor", pid) or {}).get("conciliacao_habilitada")) if pid else False
+    except Exception:
+        on = False
+    if not on:
+        base = [it for it in base if it[0] != "conciliacao"]
+    return base
+
+
+def _wallet_enabled(pid):
+    return bool(pid) and bool((_get_ent("Provedor", pid) or {}).get("conciliacao_habilitada"))
+
+
+def _wallet_maybe_feed(fatura_id, fdata):
+    """Cria WalletTransaction pendente quando fatura de CLIENTE vira paga (provedor com conciliacao)."""
+    try:
+        if fdata.get("status") != "paga" or not fdata.get("cliente_id"):
+            return
+        pid = fdata.get("provedor_id") or ""
+        if not _wallet_enabled(pid):
+            return
+        c = _db()
+        ex = c.execute("SELECT id FROM entities WHERE entity='WalletTransaction' AND json_extract(data,'$.invoice_id')=?", (fatura_id,)).fetchone()
+        c.close()
+        if ex:
+            return
+        _create_ent("WalletTransaction", {
+            "provedor_id": pid, "type": "invoice_received", "status": "pending_conciliation",
+            "amount": float(fdata.get("valor", 0) or 0),
+            "description": "Fatura paga - " + (fdata.get("cliente_nome") or "Cliente"),
+            "invoice_id": fatura_id, "cliente_nome": fdata.get("cliente_nome", ""),
+            "invoice_number": fdata.get("numero", ""),
+            "reference_date": fdata.get("pago_em") or fdata.get("vencimento") or _now_iso(),
+            "conciliated_at": "", "notes": "", "created": _now_iso()})
+    except Exception as e:
+        print("[wallet] feed erro:", str(e)[:140])
+
+
+def _wallet_data(pid):
+    cfg = _get_ent("WalletConfig", pid) or {"wallet_name": "Asaas", "initial_balance": 0.0}
+    c = _db(); rows = c.execute("SELECT id, data FROM entities WHERE entity='WalletTransaction'").fetchall(); c.close()
+    txs = []
+    for r in rows:
+        d = json.loads(r["data"])
+        if d.get("provedor_id") == pid:
+            d["_id"] = r["id"]; txs.append(d)
+    saldo = float(cfg.get("initial_balance", 0) or 0); a_conc = 0.0
+    for t in txs:
+        amt = float(t.get("amount", 0) or 0)
+        if t.get("status") == "conciliated":
+            if t.get("type") == "invoice_received":
+                saldo += amt
+            elif t.get("type") == "expense":
+                saldo -= amt
+        elif t.get("status") == "pending_conciliation" and t.get("type") == "invoice_received":
+            a_conc += amt
+    pend = sorted([t for t in txs if t.get("status") == "pending_conciliation" and t.get("type") == "invoice_received"],
+                  key=lambda x: x.get("reference_date", ""), reverse=True)
+    hist = sorted([t for t in txs if t.get("status") == "conciliated"],
+                  key=lambda x: x.get("conciliated_at", ""), reverse=True)[:30]
+    return {"wallet_name": cfg.get("wallet_name", "Asaas"), "initial_balance": float(cfg.get("initial_balance", 0) or 0),
+            "saldo": round(saldo, 2), "a_conciliar": round(a_conc, 2), "saldo_apos": round(saldo + a_conc, 2),
+            "pendentes": [{"id": t["_id"], "amount": t.get("amount", 0), "cliente_nome": t.get("cliente_nome", ""),
+                           "invoice_number": t.get("invoice_number", ""), "reference_date": t.get("reference_date", ""),
+                           "description": t.get("description", "")} for t in pend],
+            "historico": [{"type": t.get("type"), "amount": t.get("amount", 0), "description": t.get("description", ""),
+                           "cliente_nome": t.get("cliente_nome", ""), "invoice_number": t.get("invoice_number", ""),
+                           "conciliated_at": t.get("conciliated_at", "")} for t in hist]}
+
+
+def _wallet_gate(req):
+    u, pid = _prov_req(req)
+    if not pid:
+        return None, None, JSONResponse({"error": "sem permissao"}, status_code=403)
+    if not _wallet_enabled(pid):
+        return None, None, JSONResponse({"error": "recurso nao habilitado para a sua conta"}, status_code=403)
+    return u, pid, None
+
+
+@router.get("/api/comercial/prov/wallet")
+def prov_wallet_api(req: Request):
+    u, pid, err = _wallet_gate(req)
+    if err:
+        return err
+    return _wallet_data(pid)
+
+
+@router.post("/api/comercial/prov/wallet/conciliar")
+async def prov_wallet_conciliar(req: Request):
+    u, pid, err = _wallet_gate(req)
+    if err:
+        return err
+    b = await req.json()
+    tid = (b.get("id") or "").strip()
+    t = _get_ent("WalletTransaction", tid)
+    if not t or t.get("provedor_id") != pid:
+        return JSONResponse({"error": "transacao nao encontrada"}, status_code=404)
+    _update_ent("WalletTransaction", tid, {"status": "conciliated", "conciliated_at": _now_iso()})
+    return {"success": True}
+
+
+@router.post("/api/comercial/prov/wallet/expense")
+async def prov_wallet_expense(req: Request):
+    u, pid, err = _wallet_gate(req)
+    if err:
+        return err
+    b = await req.json()
+    try:
+        amt = float(b.get("amount", 0) or 0)
+    except Exception:
+        amt = 0.0
+    desc = (b.get("description") or "").strip()[:200]
+    if amt <= 0 or not desc:
+        return JSONResponse({"error": "informe descricao e valor maior que zero"}, status_code=400)
+    _create_ent("WalletTransaction", {"provedor_id": pid, "type": "expense", "status": "conciliated",
+        "amount": amt, "description": desc, "notes": (b.get("notes") or "")[:300],
+        "reference_date": _now_iso(), "conciliated_at": _now_iso(),
+        "cliente_nome": "", "invoice_number": "", "invoice_id": "", "created": _now_iso()})
+    return {"success": True}
+
+
+@router.post("/api/comercial/prov/wallet/config")
+async def prov_wallet_config(req: Request):
+    u, pid, err = _wallet_gate(req)
+    if err:
+        return err
+    b = await req.json()
+    patch = {"provedor_id": pid, "last_updated": _now_iso()}
+    if "wallet_name" in b:
+        patch["wallet_name"] = (b.get("wallet_name") or "Asaas")[:60]
+    if "initial_balance" in b:
+        try:
+            patch["initial_balance"] = float(b.get("initial_balance") or 0)
+        except Exception:
+            pass
+    if _get_ent("WalletConfig", pid) is None:
+        d = {"provedor_id": pid, "wallet_name": "Asaas", "initial_balance": 0.0}
+        d.update(patch)
+        c = _db(); c.execute("INSERT INTO entities (entity,id,data,created_date,updated_date) VALUES (?,?,?,?,?)",
+                             ("WalletConfig", pid, json.dumps(d), _now_iso(), _now_iso())); c.commit(); c.close()
+    else:
+        _update_ent("WalletConfig", pid, patch)
+    return {"success": True}
+
+
+_PROV_CONCILIACAO_BODY = """
+<div id="msg" class="msg"></div>
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+ <p style="color:var(--muted);font-size:13px;margin:0;max-width:660px;line-height:1.5">Espelho manual da sua carteira <b>Asaas</b>. As entradas aparecem sozinhas quando um cliente paga uma fatura; ficam <b>pendentes</b> até você confirmar (Conciliar). Saídas você registra manualmente. O <b>saldo real</b> é só o que está conciliado.</p>
+ <div style="display:flex;gap:8px">
+  <button onclick="openCfg()">Configurar carteira</button>
+  <button class="btn-primary" style="background:var(--bad);border:none" onclick="openExp()">Registrar Saída</button>
+ </div>
+</div>
+<div class="cards" style="margin-bottom:18px">
+ <div class="kpi"><div class="k">Saldo <span id="w_name">Asaas</span> (conciliado)</div><div class="v" id="w_saldo" style="color:var(--ok)">-</div></div>
+ <div class="kpi"><div class="k">A Conciliar (transferir)</div><div class="v" id="w_aconc" style="color:var(--accent)">-</div></div>
+ <div class="kpi"><div class="k">Saldo após conciliação</div><div class="v" id="w_apos" style="color:#60a5fa">-</div></div>
+</div>
+<b style="font-size:14px">Faturas Aguardando Conciliação</b>
+<table style="margin:8px 0 24px"><thead><tr><th>Cliente</th><th>Fatura</th><th>Data</th><th class="money">Valor</th><th></th></tr></thead>
+<tbody id="w_pend"><tr><td colspan="5" class="center">carregando...</td></tr></tbody></table>
+<b style="font-size:14px">Histórico de Movimentações</b>
+<table style="margin-top:8px"><thead><tr><th></th><th>Descrição</th><th>Fatura</th><th>Conciliado em</th><th class="money">Valor</th></tr></thead>
+<tbody id="w_hist"><tr><td colspan="5" class="center">-</td></tr></tbody></table>
+
+<div class="ov" id="ov_exp"><div class="modal" style="max-width:440px"><h2>Registrar Saída no Asaas</h2>
+ <div class="fld"><label>Descrição *</label><input id="e_desc" placeholder="Ex.: Pagamento fornecedor, conta de luz"></div>
+ <div class="fld"><label>Valor (R$) *</label><input id="e_val" type="number" step="0.01" placeholder="0,00"></div>
+ <div class="fld"><label>Observações</label><input id="e_notes"></div>
+ <div class="foot"><button onclick="closeOv('ov_exp')">Cancelar</button><button class="btn-primary" onclick="saveExp()">Registrar saída</button></div>
+</div></div>
+
+<div class="ov" id="ov_cfg"><div class="modal" style="max-width:440px"><h2>Configurar carteira</h2>
+ <div class="fld"><label>Nome da carteira</label><input id="c_name" placeholder="Asaas"></div>
+ <div class="fld"><label>Saldo inicial (R$)</label><input id="c_init" type="number" step="0.01" placeholder="0,00"><div style="font-size:12px;color:var(--muted);margin-top:4px">Quanto já havia na carteira quando começou o controle. Só o que está conciliado entra no saldo.</div></div>
+ <div class="foot"><button onclick="closeOv('ov_cfg')">Cancelar</button><button class="btn-primary" onclick="saveCfg()">Salvar</button></div>
+</div></div>
+
+<script>
+window.PAGE_INIT=wload;
+function wbrl(v){ return 'R$ '+(Number(v)||0).toFixed(2).replace('.',','); }
+function closeOv(id){ $(id).classList.remove('open'); }
+function wdt(s){ s=(''+(s||'')); if(s.length>=10){ var p=s.slice(0,10).split('-'); if(p.length===3){ var h=(s.length>=16?(' '+s.slice(11,16)):''); return p[2]+'/'+p[1]+'/'+p[0]+h; } } return s||'-'; }
+async function wload(){ try{ var d=await api('GET','/api/comercial/prov/wallet'); render(d); }catch(e){ msg('Erro (logado como o provedor certo?): '+(e&&e.message||e)); } }
+function render(d){
+ $('w_name').textContent=d.wallet_name||'Asaas';
+ $('w_saldo').textContent=wbrl(d.saldo); $('w_aconc').textContent=wbrl(d.a_conciliar); $('w_apos').textContent=wbrl(d.saldo_apos);
+ $('c_name').value=d.wallet_name||'Asaas'; $('c_init').value=(d.initial_balance!=null?d.initial_balance:'');
+ var pe=d.pendentes||[];
+ $('w_pend').innerHTML = pe.length ? pe.map(function(t){ return '<tr><td>'+esc(t.cliente_nome||'-')+'</td><td>'+esc(t.invoice_number||'-')+'</td><td>'+wdt(t.reference_date)+'</td><td class="money">'+wbrl(t.amount)+'</td><td style="text-align:right"><button class="act" style="color:var(--ok)" data-cid="'+esc(t.id)+'">Conciliar</button></td></tr>'; }).join('') : '<tr><td colspan="5" class="center">Nenhuma fatura aguardando conciliação.</td></tr>';
+ var hi=d.historico||[];
+ $('w_hist').innerHTML = hi.length ? hi.map(function(t){ var isIn=(t.type==='invoice_received'); var col=isIn?'var(--ok)':'var(--bad)'; var sign=isIn?'+':'-'; return '<tr><td style="color:'+col+';font-weight:800">'+(isIn?'&#9650;':'&#9660;')+'</td><td>'+esc(t.description||t.cliente_nome||'-')+'</td><td>'+esc(t.invoice_number||'')+'</td><td>'+wdt(t.conciliated_at)+'</td><td class="money" style="color:'+col+'">'+sign+' '+wbrl(t.amount)+'</td></tr>'; }).join('') : '<tr><td colspan="5" class="center">Nenhuma movimentação ainda.</td></tr>';
+}
+document.addEventListener('click', function(ev){ var b=(ev.target.closest?ev.target.closest('button[data-cid]'):null); if(!b)return; conciliar(b.getAttribute('data-cid')); });
+async function conciliar(id){ if(!confirm('Confirmar que esse pagamento foi transferido/contabilizado na carteira Asaas?'))return; try{ await api('POST','/api/comercial/prov/wallet/conciliar',{id:id}); msg('Conciliado.',true); wload(); }catch(e){ msg('Erro: '+(e&&e.message||e)); } }
+function openExp(){ $('e_desc').value='';$('e_val').value='';$('e_notes').value=''; $('ov_exp').classList.add('open'); }
+async function saveExp(){ var amt=parseFloat($('e_val').value||0)||0; var desc=($('e_desc').value||'').trim(); if(!desc||amt<=0){ msg('Informe descrição e valor.'); return; } try{ await api('POST','/api/comercial/prov/wallet/expense',{description:desc,amount:amt,notes:$('e_notes').value||''}); closeOv('ov_exp'); msg('Saída registrada.',true); wload(); }catch(e){ msg('Erro: '+(e&&e.message||e)); } }
+function openCfg(){ $('ov_cfg').classList.add('open'); }
+async function saveCfg(){ try{ await api('POST','/api/comercial/prov/wallet/config',{wallet_name:($('c_name').value||'Asaas'),initial_balance:parseFloat($('c_init').value||0)||0}); closeOv('ov_cfg'); msg('Configuração salva.',true); wload(); }catch(e){ msg('Erro: '+(e&&e.message||e)); } }
+</script>
+"""
+
+
+@router.get("/provedor/conciliacao")
+def prov_conciliacao_page(req: Request):
+    u, pid = _prov_req(req)
+    if pid and not _wallet_enabled(pid):
+        return _prov_shell("conciliacao", "Conciliação de Carteira",
+                           '<div class="center" style="padding:70px;color:var(--muted)">Recurso não habilitado para a sua conta.</div>', req)
+    return _prov_shell("conciliacao", "Conciliação de Carteira", _PROV_CONCILIACAO_BODY, req)
+
+
 def _upsert_fatura(p, cliente_nome, provedor_id=None):
     pay_id = p.get("id", "")
     due = p.get("dueDate", "") or ""
@@ -3013,9 +3596,13 @@ def _upsert_fatura(p, cliente_nome, provedor_id=None):
                 fdata["cliente_nome"] = json.loads(_rp["data"]).get("nome", "")
     c = _db(); ex = c.execute("SELECT id FROM entities WHERE entity='Fatura' AND json_extract(data,'$.asaas_payment_id')=?", (pay_id,)).fetchone(); c.close()
     if ex:
-        _update_ent("Fatura", ex["id"], fdata)
+        _fatura_id = ex["id"]; _update_ent("Fatura", _fatura_id, fdata)
     else:
-        _create_ent("Fatura", fdata)
+        _fatura_id = _create_ent("Fatura", fdata)
+    try:
+        _wallet_maybe_feed(_fatura_id, fdata)
+    except Exception:
+        pass
 
 
 @router.post("/api/comercial/faturas/sync")
@@ -4657,7 +5244,7 @@ function renderCusto(c){
  var h='<div class="kpi"><div class="k">Plano</div><div class="v" style="font-size:15px">'+esc(c.plano_nome||'(sem plano)')+'</div></div>'+
   '<div class="kpi"><div class="k">Painel</div><div class="v">'+brl(c.painel)+'</div></div>'+
   '<div class="kpi"><div class="k">IA</div><div class="v">'+brl(c.ia_total)+'</div></div>'+
-  (c.gravacao==='cloud'?'<div class="kpi"><div class="k">Gravacao</div><div class="v">'+brl(c.grav_total)+'</div></div>':'')+
+  (c.gravacao==='cloud'?'<div class="kpi"><div class="k">Gravacao</div><div class="v">'+brl(c.grav_total)+'</div></div>':'')+((c.busca_total||0)>0?'<div class="kpi"><div class="k">Pergunte</div><div class="v">'+brl(c.busca_total)+'</div></div>':'')+
   '<div class="kpi" style="border-color:var(--accent)"><div class="k">Total estimado/mes</div><div class="v" style="color:var(--accent)">'+brl(c.total)+'</div></div>';
  $('planobar').innerHTML=h;
  var base = c.gravacao==='local' ? 'Plano LOCAL: gravacao no seu servidor (sem custo). Voce paga painel + IA ativada.' :
@@ -4676,13 +5263,14 @@ function render(){ var q=($('q').value||'').toLowerCase(); var MN=modNome();
   var grav=''; if(DATA.gravacao==='cloud'){ var d=c.dias_gravacao||0; grav='<button class="act" style="color:var(--accent)" onclick="grav(\\''+c.id+'\\')">'+(d>0?('gravacao: '+d+'d'):'gravacao')+'</button>'; }
    else if(DATA.gravacao==='local'){ grav='<span style="color:var(--muted);font-size:11px;align-self:center">grav. local</span>'; }
   var del=c.exclusao_pendente ? '<span class="pill" style="color:var(--bad);border-color:rgba(248,113,113,.4);font-size:10px;align-self:center">exclusao pendente</span>' : '<button class="act" style="color:var(--bad)" onclick="pedirExclusao(\\''+c.id+'\\')">excluir</button>';
-  return '<div class="camcard"><div class="camthumb">'+thumb+
+  var busca=''; if(DATA.gravacao==='cloud'){ if(c.busca_ia){ busca='<button class="act" style="color:var(--ok)" data-id="'+c.id+'" data-on="1" onclick="toggleBusca(this)">Pergunte: ON</button>'; } else if((c.dias_gravacao||0)>0){ busca='<button class="act" style="color:var(--accent)" data-id="'+c.id+'" data-on="0" onclick="toggleBusca(this)">Pergunte: ativar</button>'; } else { busca='<span class="act" style="color:var(--muted)" title="Ative a gravacao em nuvem primeiro">Pergunte (grave 1o)</span>'; } }
+   return '<div class="camcard"><div class="camthumb">'+thumb+
    '<span class="pill '+(stOn?'ok':'off')+'" style="position:absolute;top:8px;left:8px;font-size:10px;background:rgba(0,0,0,.55)">'+esc(stOn?'online':(c.status||'offline'))+'</span>'+
    '<span style="position:absolute;top:8px;right:8px">'+iaBadge+'</span></div>'+
    '<div style="padding:10px 12px"><div style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(c.nome||'-')+'</div>'+
    '<div style="color:var(--muted);font-size:12px;margin:2px 0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(c.cliente_nome||'sem cliente')+'</div>'+
    '<div style="min-height:20px;margin-bottom:8px">'+(chips.trim()||'<span style="color:var(--muted);font-size:12px">sem IA</span>')+'</div>'+
-   '<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="act" style="color:var(--accent)" onclick="ver(\\''+c.id+'\\')">ver ao vivo</button><button class="act" onclick="editarCam(\\''+c.id+'\\')">editar</button><button class="act" onclick="conf(\\''+c.id+'\\')">configurar IA</button><button class="act" onclick="editLocal(\\''+c.id+'\\')">local</button>'+grav+del+'</div></div></div>'; }).join(''); }
+   '<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="act" style="color:var(--accent)" onclick="ver(\\''+c.id+'\\')">ver ao vivo</button><button class="act" onclick="editarCam(\\''+c.id+'\\')">editar</button><button class="act" onclick="conf(\\''+c.id+'\\')">configurar IA</button><button class="act" onclick="editLocal(\\''+c.id+'\\')">local</button>'+busca+grav+del+'</div></div></div>'; }).join(''); }
 function ver(id){ var c=CAMS.filter(function(x){return x.id===id})[0]; if(!c)return; if(!c.embed_url){msg('Camera sem link de player.');return;}
  $('lv_nome').textContent=c.nome||''; $('lv_frame').src=c.embed_url; $('lv_link').href=c.embed_url; $('ovlive').classList.add('open'); }
 function fecharLive(){ $('ovlive').classList.remove('open'); $('lv_frame').src='about:blank'; }
@@ -4724,6 +5312,11 @@ async function salvar(){ var c=CAMS.filter(function(x){return x.id===$('a_id').v
  try{ await api('POST','/api/comercial/prov/analiticos/salvar',body); fecha(); msg('IA salva. Vale em ~2 min.',true); reload(); }catch(e){ msg('Erro ao salvar: '+e.message); } }
 async function limpar(){ if(!confirm('Desligar a IA desta camera?'))return;
  try{ await api('POST','/api/comercial/prov/analiticos/limpar',{camera_id:$('a_id').value}); fecha(); msg('IA desligada.',true); reload(); }catch(e){ msg('Erro: '+e.message); } }
+async function toggleBusca(el){ var id=el.getAttribute('data-id'); var on=el.getAttribute('data-on')==='1';
+ if(!on){ if(!confirm('Ativar o Pergunte ao Corexia nesta camera? Sera cobrado R$ 5,97/mes por camera.'))return; }
+ else { if(!confirm('Desativar o Pergunte ao Corexia nesta camera?'))return; }
+ try{ await api('POST','/api/comercial/prov/cameras/'+id+'/busca',{ativo:!on}); msg(!on?'Pergunte ao Corexia ativado nesta camera.':'Desativado.',true); reload(); loadCusto(); }
+ catch(e){ msg('Erro: '+(e&&e.message||e)); } }
 function grav(id){ var c=CAMS.filter(function(x){return x.id===id})[0]; if(!c)return;
  $('g_id').value=id; $('g_nome').textContent=c.nome||'';
  $('g_dias').innerHTML='<option value="0">Nao gravar</option>'+DATA.grav_tiers.map(function(t){return '<option value="'+t.dias+'">'+t.dias+' dia'+(t.dias>1?'s':'')+' - '+brl(t.valor)+'/mes</option>';}).join('');
@@ -5164,7 +5757,7 @@ _MONIT_BODY = """
  <div>
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>Mural de cameras</b><span style="display:flex;gap:10px;align-items:center"><label class="ck" style="font-size:12px"><input type="checkbox" id="auto" checked> auto</label><button onclick="load()">Atualizar</button></span></div>
   <div id="wall" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-bottom:18px"><div class="center" style="grid-column:1/-1">carregando...</div></div>
-  <div style="margin-bottom:8px"><b>Mapa das cameras</b></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>Mapa de Câmeras</b><span id="mapinfo" style="font-size:12px;color:var(--muted)"></span></div>
   <div id="mapbox" style="height:340px;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--surface)"><div class="center" style="padding:30px">carregando...</div></div>
  </div>
  <div>
@@ -5187,7 +5780,7 @@ _MONIT_BODY = """
 .leaflet-popup-content{color:#111}</style>
 <script>
 window.PAGE_INIT=load;
-var CAMS=[], LASTTOP=null, MAP=null;
+var CAMS=[], LASTTOP=null, MAP=null, MARKERS=null;
 var TLAB={fogo:'Fogo',arma_fogo:'Arma de fogo',arma_branca:'Arma branca',arma:'Arma',intruso:'Intrusao',linha:'Linha',placa:'Placa',pessoa:'Pessoa',veiculo:'Veiculo',animal:'Animal',epi:'EPI',heatmap:'Calor',toca_ninja:'Toca ninja',piscina:'Piscina',movimento:'Movimento',aglomeracao:'Aglomeracao',outro:'Outro'};
 function dt(s){ s=(''+(s||'')); var d=s.slice(0,10).split('-'); var t=s.slice(11,16); return d.length===3?(d[2]+'/'+d[1]+' '+t):s; }
 async function load(){ try{
@@ -5210,13 +5803,58 @@ function renderFeed(a){ if(!a.length){ $('feed').innerHTML='<div class="center">
  }).join(''); }
 function ver(id){ var c=CAMS.filter(function(x){return x.id===id})[0]; if(!c)return; if(!c.embed_url){msg('Camera sem player.');return;} $('lv_nome').textContent=c.nome||''; $('lv_frame').src=c.embed_url; $('lv_link').href=c.embed_url; $('ovlive').classList.add('open'); }
 function fecharLive(){ $('ovlive').classList.remove('open'); $('lv_frame').src='about:blank'; }
-function initMap(){ var pts=CAMS.filter(function(c){return c.latitude&&c.longitude;}); var box=$('mapbox');
- if(!pts.length){ box.innerHTML='<div class="center" style="padding:30px;color:var(--muted)">Nenhuma camera com localizacao (lat/long) ainda. Quando as cameras tiverem coordenadas, elas aparecem aqui no mapa.</div>'; return; }
- loadLeaflet(function(){ if(!MAP){ box.innerHTML=''; MAP=L.map(box).setView([pts[0].latitude,pts[0].longitude],13); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'OSM'}).addTo(MAP); }
-  pts.forEach(function(c){ L.marker([c.latitude,c.longitude]).addTo(MAP).bindPopup(esc(c.nome||'')); }); }); }
-function loadLeaflet(cb){ if(window.L){cb();return;}
+function initMap(){
+ var pts=CAMS.filter(function(c){return c.latitude&&c.longitude;}); var box=$('mapbox'); var semc=CAMS.length-pts.length;
+ var info=$('mapinfo'); if(info) info.textContent=pts.length+' no mapa'+(semc>0?(' · '+semc+' sem coordenadas'):'');
+ loadLeaflet(function(){
+  if(!MAP){ box.innerHTML=''; MAP=L.map(box); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'}).addTo(MAP); }
+  if(MARKERS){ try{ MAP.removeLayer(MARKERS); }catch(e){} MARKERS=null; }
+  if(!pts.length){ MAP.setView([-8.05,-34.9],11); return; }
+  var canCl=!!(window.L && L.markerClusterGroup);
+  MARKERS = canCl ? L.markerClusterGroup({maxClusterRadius:44, iconCreateFunction:function(cl){
+    var ms=cl.getAllChildMarkers(), anyOn=false; for(var i=0;i<ms.length;i++){ if(ms[i].options._on){anyOn=true;break;} }
+    var col=anyOn?'#10b981':'#64748b';
+    return L.divIcon({html:'<div style="background:'+col+';color:#fff;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 13px system-ui;border:2px solid #fff;box-shadow:0 0 0 2px rgba(0,0,0,.35)">'+cl.getChildCount()+'</div>', className:'', iconSize:[34,34]});
+  }}) : L.layerGroup();
+  pts.forEach(function(c){
+   var on=(c.status||'').toLowerCase()==='online'; var col=on?'#10b981':'#64748b';
+   var icon=L.divIcon({className:'', html:'<span style="display:block;width:16px;height:16px;border-radius:50%;background:'+col+';border:2px solid #fff;box-shadow:0 0 0 2px rgba(0,0,0,.4)"></span>', iconSize:[16,16], iconAnchor:[8,8], popupAnchor:[0,-9]});
+   var m=L.marker([c.latitude,c.longitude],{icon:icon, _on:on});
+   m.bindPopup(popupCam(c),{minWidth:224});
+   MARKERS.addLayer(m);
+  });
+  MAP.addLayer(MARKERS);
+  try{ MAP.fitBounds(L.latLngBounds(pts.map(function(c){return [c.latitude,c.longitude];})).pad(0.25),{maxZoom:16}); }catch(e){ MAP.setView([pts[0].latitude,pts[0].longitude],13); }
+  setTimeout(function(){ try{MAP.invalidateSize();}catch(e){} },250);
+ });
+}
+function popupCam(c){
+ var on=(c.status||'').toLowerCase()==='online';
+ var addr=[c.endereco,c.bairro,c.cidade].filter(function(x){return x;}).join(', ');
+ return '<div style="min-width:210px;font-family:system-ui">'+
+  '<img src="/camthumb/'+c.id+'?t='+encodeURIComponent(TOKEN)+'" style="width:210px;max-width:100%;height:118px;object-fit:cover;border-radius:8px;background:#0b0d12;display:block;margin-bottom:7px" onerror="this.remove()">'+
+  '<div style="font:700 14px system-ui;color:#111;margin-bottom:2px">'+esc(c.nome||'-')+'</div>'+
+  (c.cliente_nome?'<div style="font-size:12px;color:#555">'+esc(c.cliente_nome)+'</div>':'')+
+  (addr?'<div style="font-size:12px;color:#555;margin:2px 0 5px">'+esc(addr)+'</div>':'')+
+  '<div style="font-size:12px;color:#333;margin-bottom:8px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+(on?'#10b981':'#94a3b8')+';margin-right:5px;vertical-align:middle"></span>'+(on?'Online':'Offline')+'</div>'+
+  '<button onclick="ver(&#39;'+c.id+'&#39;)" style="background:#f97316;color:#111;border:0;border-radius:7px;padding:8px 12px;font:700 12px system-ui;cursor:pointer;width:100%">&#9654; Ver ao vivo</button>'+
+ '</div>';
+}
+function loadLeaflet(cb){
+ if(window.L){ _cxCluster(cb); return; }
  var css=document.createElement('link'); css.rel='stylesheet'; css.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(css);
- var s=document.createElement('script'); s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'; s.onload=cb; s.onerror=function(){ var b=$('mapbox'); if(b)b.innerHTML='<div class="center" style="padding:30px;color:var(--muted)">Nao foi possivel carregar o mapa (sem internet?).</div>'; }; document.body.appendChild(s); }
+ var s=document.createElement('script'); s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+ s.onload=function(){ _cxCluster(cb); };
+ s.onerror=function(){ var b=$('mapbox'); if(b)b.innerHTML='<div class="center" style="padding:30px;color:var(--muted)">Nao foi possivel carregar o mapa (sem internet?).</div>'; };
+ document.body.appendChild(s);
+}
+function _cxCluster(cb){
+ if(window.L && L.markerClusterGroup){ cb(); return; }
+ var c1=document.createElement('link'); c1.rel='stylesheet'; c1.href='https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css'; document.head.appendChild(c1);
+ var c2=document.createElement('link'); c2.rel='stylesheet'; c2.href='https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css'; document.head.appendChild(c2);
+ var sc=document.createElement('script'); sc.src='https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js';
+ sc.onload=cb; sc.onerror=cb; document.body.appendChild(sc);
+}
 function beep(){ try{ var A=window.AudioContext||window.webkitAudioContext; if(!A)return; var a=new A(); var o=a.createOscillator(),g=a.createGain(); o.connect(g); g.connect(a.destination); o.type='sine'; o.frequency.value=880; g.gain.value=0.08; o.start(); setTimeout(function(){o.stop();a.close();},350);}catch(e){} }
 function fala(t){ try{ if($('som').checked&&window.speechSynthesis){ var u=new SpeechSynthesisUtterance('Alerta: '+t); u.lang='pt-BR'; window.speechSynthesis.speak(u);} }catch(e){} }
 setInterval(function(){ if($('auto')&&$('auto').checked) load(); },20000);

@@ -1332,16 +1332,17 @@ def _evolution(numero, caption, img_b64=None):
     except Exception as e:
         print("[evolution] erro:", e); return False
 
-def _zapi(numero, caption, img_b64=None):
-    if not (ZAPI_INSTANCE and ZAPI_TOKEN):
+def _zapi(numero, caption, img_b64=None, inst=None, tok=None, cli=None):
+    inst = inst or ZAPI_INSTANCE; tok = tok or ZAPI_TOKEN; cli = cli if cli is not None else ZAPI_CLIENT
+    if not (inst and tok):
         print("[zapi] credenciais nao configuradas — pulei WhatsApp"); return False
-    headers = {"Content-Type": "application/json", "Client-Token": ZAPI_CLIENT}
+    headers = {"Content-Type": "application/json", "Client-Token": cli or ""}
     try:
         if img_b64:
-            url = f"https://api.z-api.io/instances/{ZAPI_INSTANCE}/token/{ZAPI_TOKEN}/send-image"
+            url = f"https://api.z-api.io/instances/{inst}/token/{tok}/send-image"
             body = {"phone": numero, "image": f"data:image/jpeg;base64,{img_b64}", "caption": caption}
         else:
-            url = f"https://api.z-api.io/instances/{ZAPI_INSTANCE}/token/{ZAPI_TOKEN}/send-text"
+            url = f"https://api.z-api.io/instances/{inst}/token/{tok}/send-text"
             body = {"phone": numero, "message": caption}
         r = requests.post(url, json=body, headers=headers, timeout=25)
         print("[zapi]", r.status_code, r.text[:200])
@@ -1349,10 +1350,17 @@ def _zapi(numero, caption, img_b64=None):
     except Exception as e:
         print("[zapi] erro:", e); return False
 
-def envia_whatsapp(numero, caption, img_b64=None):
+def envia_whatsapp(numero, caption, img_b64=None, provedor_id=None):
     numero = _numero(numero)
     if WHATSAPP_PROVIDER == "zapi":
-        return _zapi(numero, caption, img_b64)
+        _inst = _tok = _cli = None
+        if provedor_id:
+            try:
+                import comercial as _com
+                _inst, _tok, _cli = _com._zapi_do_provedor(provedor_id)
+            except Exception as _e:
+                print("[zapi] _zapi_do_provedor falhou:", _e)
+        return _zapi(numero, caption, img_b64, _inst, _tok, _cli)
     return _evolution(numero, caption, img_b64)
 
 
@@ -1379,7 +1387,7 @@ def _pref_notifica(cliente_id, tipo):
     if tipos and tipo not in tipos:
         return False
     now = datetime.now()
-    hi = (d.get("hora_inicio") or "").strip(); hf = (d.get("hora_fim") or "").strip()
+    hi = (d.get("hora_inicio") or d.get("horario_inicio") or "").strip(); hf = (d.get("hora_fim") or d.get("horario_fim") or "").strip()
     if hi and hf:
         hm = now.strftime("%H:%M")
         dentro = (hi <= hm <= hf) if hi <= hf else (hm >= hi or hm <= hf)
@@ -1429,7 +1437,10 @@ async def webhook(req: Request):
     cam = _get_entity("Camera", b.get("camera_id", "")) or {}
     cliente_id = cam.get("cliente_id", "")
     cliente_nome = cam.get("cliente_nome", "")
-    tel = cam.get("cliente_telefone", "")
+    tel = (cam.get("cliente_telefone") or "").strip()
+    if not tel and cliente_id:
+        _cli_ent = _get_entity("Cliente", cliente_id) or {}
+        tel = (_cli_ent.get("telefone") or _cli_ent.get("celular") or _cli_ent.get("whatsapp") or "").strip()
     provedor_id = cam.get("provedor_id", "")
     provedor_nome = cam.get("provedor_nome", "")
 
@@ -1465,16 +1476,17 @@ async def webhook(req: Request):
                    f"🎯 *Confianca da IA:* {int(b.get('confianca', 0) or 0)}%\n"
                    f"🕐 *Horario:* {agora}\n"
                    + (f"📝 *Descricao:* {b.get('descricao', '')}\n" if b.get('descricao') else "")
+                   + (f"\n📹 *Ver a camera ao vivo:*\n{cam.get('embed_url','')}\n" if cam.get('embed_url') else "")
                    + "\n_Sistema Corexia de vigilancia._")
         # 1) CLIENTE final: so se a camera tem cliente c/ telefone E a PreferenciaAlerta permite
         if tel and cliente_id and _pref_notifica(cliente_id, tipo):
-            enviado = envia_whatsapp(tel, caption, img_b64)
+            enviado = envia_whatsapp(tel, caption, img_b64, provedor_id)
             if enviado:
                 c = db(); c.execute("UPDATE alertas SET whatsapp=1 WHERE id=?", (aid,)); c.commit(); c.close()
         # 2) PLANTAO do provedor: recebe TODOS os alertas (sem filtro de preferencia)
         try:
             for _num in _plantao_numeros(provedor_id):
-                envia_whatsapp(_num, "*[PLANTAO]* " + caption, img_b64)
+                envia_whatsapp(_num, "*[PLANTAO]* " + caption, img_b64, provedor_id)
         except Exception as _e:
             print("[plantao] erro:", _e)
         # 3) SUB-USUARIOS do cliente: so os que optaram (receber_alertas_whatsapp) e com a camera liberada
@@ -1484,7 +1496,7 @@ async def webhook(req: Request):
                 _stel = (_su.get("telefone") or "").strip()
                 if (_su.get("status") == "ativo" and _su.get("receber_alertas_whatsapp")
                         and _stel and _camid in (_su.get("allowed_cameras") or [])):
-                    envia_whatsapp(_stel, caption, img_b64)
+                    envia_whatsapp(_stel, caption, img_b64, provedor_id)
         except Exception as _e:
             print("[subuser-alerta] erro:", _e)
 
@@ -1682,6 +1694,14 @@ async def listar(req: Request):
         _c.close()
     except Exception as _e:
         print("[listarCamerasIA] cfg analitico:", _e)
+    # so cameras PUBLICANDO agora (mediamtx_ready) — evita o detector gastar tempo em ffprobe de offline
+    _pub = None
+    try:
+        _rd = json.load(open(os.path.join(HERE, "mediamtx_ready.json")))
+        if (time.time() - float(_rd.get("ts", 0))) < 360:
+            _pub = set(str(x) for x in _rd.get("ready", []))
+    except Exception:
+        _pub = None
     cams = []
     for o in _todas_cameras():
         url = (o.get("rtsp_url") or o.get("stream_url") or "").strip()
@@ -1700,6 +1720,8 @@ async def listar(req: Request):
                 continue
         elif o_eng == "nvdec":          # detector antigo nao pega as do nvdec
             continue
+        if _pub and o.get("stream_key") not in _pub:
+            continue    # so quem esta publicando agora vai pro detector
         cams.append({"id": o["id"], "nome": o.get("nome", ""), "cliente_id": o.get("cliente_id", ""),
                      "cliente_nome": o.get("cliente_nome", ""), "cliente_telefone": o.get("cliente_telefone", ""),
                      "provedor_id": o.get("provedor_id", ""), "analitico_id": o.get("analitico_id", ""),
@@ -1872,6 +1894,340 @@ def _rec_browse(relpath):
         res = []
     _rec_cache[relpath] = (now, res)
     return res
+
+
+# ==================== BUSCA INTELIGENTE — "Pergunte ao Corexia" (Fase 1: VLM sob demanda) ====================
+# Busca por linguagem natural dentro de gravacoes. Amostra quadros do(s) trecho(s) escolhido(s)
+# e pergunta ao Gemini (VLM, via REST) se cada quadro corresponde a descricao do operador.
+# Roda em thread de fundo (NUNCA no event loop) — segue a regra anti-freeze do backend.
+_BUSCA_JOBS = {}
+_BUSCA_DIR = "/tmp/corexia_busca"
+_BUSCA_LOCK = threading.Lock()
+_BUSCA_STEP = {"rapido": 6.0, "normal": 3.0, "minucioso": 1.5}
+_BUSCA_MAX_SEGMENTS = 8      # teto: ate 8 trechos (~2h) por busca
+_BUSCA_MAX_FRAMES = 900      # teto duro de quadros por job
+_BUSCA_CONF_MIN = 55         # so mostra correspondencia com confianca >= isso
+
+
+def _busca_reap():
+    """Remove jobs e frames com mais de 1h (limpeza preguicosa, chamada ao iniciar)."""
+    import shutil
+    now = time.time()
+    try:
+        for jid in list(_BUSCA_JOBS.keys()):
+            j = _BUSCA_JOBS.get(jid)
+            if j and (now - j.get("created", now)) > 3600:
+                _BUSCA_JOBS.pop(jid, None)
+                shutil.rmtree(os.path.join(_BUSCA_DIR, jid), ignore_errors=True)
+    except Exception:
+        pass
+
+
+def _gemini_match(query, jpeg_path):
+    """Pergunta ao Gemini se o quadro corresponde a query. Retorna (match, confianca, motivo).
+    match=None => sem chave/config (sinaliza erro fatal do job)."""
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not key:
+        return (None, 0, "sem_chave")
+    model = (os.getenv("BUSCA_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-2.0-flash").strip()
+    try:
+        with open(jpeg_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+    except Exception:
+        return (False, 0, "sem_frame")
+    prompt = (
+        "Voce analisa 1 quadro de camera de seguranca. O operador procura por: \"%s\".\n"
+        "Responda SOMENTE em JSON: {\"match\": true|false, \"confianca\": 0-100, \"motivo\": \"ate 6 palavras\"}.\n"
+        "match=true APENAS se o que o operador procura aparece de forma clara e identificavel no quadro. "
+        "Em duvida, ou se o objeto/pessoa nao estiver visivel, use match=false." % (query[:300])
+    )
+    body = {
+        "contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": "image/jpeg", "data": b64}}]}],
+        "generationConfig": {"temperature": 0, "maxOutputTokens": 120, "responseMimeType": "application/json"},
+    }
+    url = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s" % (model, key)
+    try:
+        r = requests.post(url, json=body, timeout=40)
+        if r.status_code != 200:
+            return (False, 0, "api_%d" % r.status_code)
+        j = r.json()
+        txt = j["candidates"][0]["content"]["parts"][0]["text"]
+        d = json.loads(txt)
+        return (bool(d.get("match")), int(d.get("confianca") or 0), str(d.get("motivo") or "")[:60])
+    except Exception:
+        return (False, 0, "erro")
+
+
+def _busca_instant_query(camera_id, date, query, topk=24):
+    """Consulta o indice CLIP na Xeon via tunel reverso (127.0.0.1:9765). None se indisponivel/nao indexado."""
+    url = os.getenv("BUSCA_SVC_URL", "http://127.0.0.1:9765")
+    sec = os.getenv("BUSCA_SVC_SECRET", "")
+    try:
+        r = requests.post(url + "/query", timeout=12,
+                          headers={"X-Busca-Secret": sec, "Content-Type": "application/json"},
+                          json={"text": query, "camera_key": camera_id, "date": date, "topk": topk, "min_score": 0.18})
+        if r.status_code != 200:
+            return None
+        return r.json()
+    except Exception:
+        return None
+
+
+def _busca_worker(job_id, camera_id, cam_nome, folder, date, segs, query, step):
+    """Extrai quadros dos segmentos (ffmpeg via URL assinada) e consulta o VLM. Thread de fundo."""
+    job = _BUSCA_JOBS.get(job_id)
+    if not job:
+        return
+    jobdir = os.path.join(_BUSCA_DIR, job_id)
+    try:
+        os.makedirs(jobdir, exist_ok=True)
+    except Exception:
+        pass
+    # === modo INSTANTANEO: tenta o indice CLIP (Xeon via tunel) antes do Nivel B ===
+    try:
+        _sel = set(a for a, _si in segs)
+        _inst = _busca_instant_query(camera_id, date, query, 24)
+        if _inst is not None and _inst.get("indexed") and _inst.get("results"):
+            _res = [r for r in _inst["results"] if r.get("arquivo") in _sel]
+            job["mode"] = "instant"
+            job["total"] = len(_res)
+
+            def _thumb(r):
+                if job.get("cancel"):
+                    return None
+                relpath = folder + "/" + r["arquivo"]
+                src = _rec_signed_url(relpath, 1800)
+                fp = os.path.join(jobdir, "i_%s.jpg" % secrets.token_hex(4))
+                try:
+                    subprocess.run(["ffmpeg", "-nostdin", "-y", "-loglevel", "error",
+                                    "-ss", str(max(0.0, float(r.get("offset", 0)))), "-i", src,
+                                    "-frames:v", "1", "-vf", "scale=640:-2", "-q:v", "5", fp],
+                                   timeout=60, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except Exception:
+                    return None
+                with _BUSCA_LOCK:
+                    job["processed"] = job.get("processed", 0) + 1
+                if not (os.path.exists(fp) and os.path.getsize(fp) > 0):
+                    return None
+                clip = _clip_signed_url(relpath, max(0.0, float(r.get("offset", 0)) - 4), 12)
+                conf = max(0, min(100, int(round(float(r.get("score", 0)) * 100))))
+                return {"frame": os.path.basename(fp), "ts": r.get("ts", ""), "conf": conf,
+                        "motivo": "", "clip_url": clip, "arquivo": r["arquivo"]}
+            try:
+                with ThreadPoolExecutor(max_workers=6) as ex:
+                    for res in ex.map(_thumb, _res):
+                        if res:
+                            job["results"].append(res)
+            except Exception:
+                pass
+            job["results"].sort(key=lambda x: x["ts"])
+            job["status"] = "done"
+            return
+    except Exception:
+        pass
+    # === fallback: Nivel B (VLM/Gemini) ===
+    frames = []   # (frame_path, arquivo, offset_s, seg_inicio)
+    for si, (arquivo, seg_inicio) in enumerate(segs):
+        if job.get("cancel"):
+            break
+        relpath = folder + "/" + arquivo
+        src = _rec_signed_url(relpath, 1800)
+        pat = os.path.join(jobdir, "s%02d_%%05d.jpg" % si)
+        try:
+            subprocess.run(
+                ["ffmpeg", "-nostdin", "-y", "-loglevel", "error", "-i", src,
+                 "-vf", "fps=1/%g,scale=640:-2" % step, "-q:v", "5", pat],
+                timeout=600, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            job["msgs"] = (job.get("msgs") or []) + ["falha ao abrir " + arquivo]
+            continue
+        i = 1
+        while True:
+            fp = os.path.join(jobdir, "s%02d_%05d.jpg" % (si, i))
+            if not os.path.exists(fp):
+                break
+            frames.append((fp, arquivo, (i - 1) * step, seg_inicio))
+            i += 1
+            if len(frames) >= _BUSCA_MAX_FRAMES:
+                break
+        if len(frames) >= _BUSCA_MAX_FRAMES:
+            job["msgs"] = (job.get("msgs") or []) + ["limite de %d quadros atingido" % _BUSCA_MAX_FRAMES]
+            break
+    job["total"] = len(frames)
+
+    def _one(item):
+        fp, arquivo, offset, seg_inicio = item
+        if job.get("cancel") or job.get("fatal"):
+            return None
+        match, conf, motivo = _gemini_match(query, fp)
+        with _BUSCA_LOCK:
+            job["processed"] = job.get("processed", 0) + 1
+        if match is None:
+            job["fatal"] = "IA de busca nao configurada no servidor (falta a chave Gemini)."
+            return None
+        if match and conf >= _BUSCA_CONF_MIN:
+            relpath = folder + "/" + arquivo
+            clip = _clip_signed_url(relpath, max(0.0, offset - 4), 12)
+            try:
+                bh, bm, bs = [int(x) for x in seg_inicio.split(":")]
+                tot = bh * 3600 + bm * 60 + bs + int(offset)
+                ts = "%02d:%02d:%02d" % ((tot // 3600) % 24, (tot % 3600) // 60, tot % 60)
+            except Exception:
+                ts = seg_inicio
+            return {"frame": os.path.basename(fp), "ts": ts, "conf": conf,
+                    "motivo": motivo, "clip_url": clip, "arquivo": arquivo}
+        try:
+            os.remove(fp)   # descarta quadro sem correspondencia (economiza disco)
+        except Exception:
+            pass
+        return None
+
+    try:
+        with ThreadPoolExecutor(max_workers=5) as ex:
+            for res in ex.map(_one, frames):
+                if res:
+                    job["results"].append(res)
+                if job.get("fatal") or job.get("cancel"):
+                    break
+    except Exception as e:
+        job["msgs"] = (job.get("msgs") or []) + ["erro: " + str(e)[:120]]
+    try:
+        job["results"].sort(key=lambda x: x["ts"])
+    except Exception:
+        pass
+    job["status"] = "cancelado" if job.get("cancel") else ("erro" if job.get("fatal") else "done")
+
+
+@app.post("/api/busca/iniciar")
+async def busca_iniciar(req: Request):
+    u = current_user(req)
+    if not u:
+        return _unauth()
+    _busca_reap()
+    try:
+        b = await req.json()
+    except Exception:
+        return JSONResponse({"error": "json invalido"}, status_code=400)
+    camera_id = (b.get("camera_id") or "").strip()
+    data = (b.get("data") or "").strip()
+    query = (b.get("query") or "").strip()[:300]
+    precisao = (b.get("precisao") or "normal").strip()
+    arquivos = b.get("arquivos") or []
+    if not query:
+        return JSONResponse({"error": "descreva o que procurar"}, status_code=400)
+    if not (camera_id and data):
+        return JSONResponse({"error": "camera/data faltando"}, status_code=400)
+    cam = next((c for c in _gravacoes_visiveis(u) if c["id"] == camera_id), None)
+    if not cam:
+        return _forbidden("camera nao encontrada ou sem acesso")
+    if not cam.get("busca_ia") and u.get("role") != "admin":
+        return _forbidden("Pergunte ao Corexia nao esta ativado nesta camera")
+    try:
+        dt = datetime.strptime(data, "%Y-%m-%d")
+    except Exception:
+        return JSONResponse({"error": "data invalida"}, status_code=400)
+    cliente = _rec_safe(cam.get("cliente_nome") or "SEM_CLIENTE")
+    camnome = _rec_safe(cam.get("nome") or "")
+    folder = "%s/%s/%s" % (cliente, _rec_week(dt), data)
+    segs = []
+    for a in arquivos:
+        a = str(a or "").strip()
+        if ("/" in a) or (".." in a) or (not a.endswith(".mp4")) or (not a.startswith(camnome + "_")):
+            continue
+        seg_inicio = a[len(camnome) + 1:-4].replace("-", ":")
+        segs.append((a, seg_inicio))
+        if len(segs) >= _BUSCA_MAX_SEGMENTS:
+            break
+    if not segs:
+        return JSONResponse({"error": "selecione ao menos 1 trecho valido"}, status_code=400)
+    step = _BUSCA_STEP.get(precisao, 3.0)
+    job_id = secrets.token_hex(8)
+    _BUSCA_JOBS[job_id] = {"user_id": u.get("id"), "status": "running", "processed": 0, "total": 0,
+                           "results": [], "created": time.time(), "query": query,
+                           "cam_nome": cam.get("nome", ""), "msgs": [], "cancel": False, "fatal": None}
+    threading.Thread(target=_busca_worker,
+                     args=(job_id, camera_id, cam.get("nome", ""), folder, data, segs, query, step),
+                     daemon=True).start()
+    return {"job_id": job_id, "trechos": len(segs)}
+
+
+@app.get("/api/busca/cameras")
+def busca_cameras(req: Request):
+    u = current_user(req)
+    if not u:
+        return _unauth()
+    is_admin = (u.get("role") == "admin")
+    out = []
+    for cam in _gravacoes_visiveis(u):
+        if not (is_admin or cam.get("busca_ia")):
+            continue
+        cliente = _rec_safe(cam.get("cliente_nome") or "SEM_CLIENTE")
+        camnome = _rec_safe(cam.get("nome") or "")
+        dias = set()
+        for wk in _rec_browse(cliente):
+            if not wk.get("is_dir"):
+                continue
+            wkname = (wk.get("name") or "").strip("/")
+            for dy in _rec_browse(cliente + "/" + wkname):
+                if not dy.get("is_dir"):
+                    continue
+                dyname = (dy.get("name") or "").strip("/")
+                for f in _rec_browse(cliente + "/" + wkname + "/" + dyname):
+                    if (not f.get("is_dir")) and (f.get("name") or "").startswith(camnome + "_"):
+                        dias.add(dyname)
+                        break
+        if dias:
+            out.append({"camera_id": cam["id"], "camera_nome": cam.get("nome", ""),
+                        "dias": sorted(dias, reverse=True)})
+    return out
+
+
+@app.get("/api/busca/status")
+def busca_status(req: Request):
+    u = current_user(req)
+    if not u:
+        return _unauth()
+    jid = req.query_params.get("job", "")
+    job = _BUSCA_JOBS.get(jid)
+    if not job or job.get("user_id") != u.get("id"):
+        return JSONResponse({"error": "job nao encontrado"}, status_code=404)
+    return {"status": job.get("status"), "processed": job.get("processed", 0),
+            "total": job.get("total", 0), "found": len(job.get("results", [])),
+            "results": job.get("results", []), "query": job.get("query", ""), "mode": job.get("mode", "vlm"),
+            "erro": job.get("fatal"), "msgs": (job.get("msgs") or [])[-3:]}
+
+
+@app.post("/api/busca/cancelar")
+async def busca_cancelar(req: Request):
+    u = current_user(req)
+    if not u:
+        return _unauth()
+    try:
+        b = await req.json()
+    except Exception:
+        b = {}
+    job = _BUSCA_JOBS.get((b.get("job") or "").strip())
+    if job and job.get("user_id") == u.get("id"):
+        job["cancel"] = True
+    return {"ok": True}
+
+
+@app.get("/api/busca/frame")
+def busca_frame(req: Request):
+    u = current_user(req, allow_query_token=True)   # <img> usa ?t= (nao manda header Authorization)
+    if not u:
+        return _unauth()
+    jid = req.query_params.get("job", "")
+    fn = req.query_params.get("f", "")
+    job = _BUSCA_JOBS.get(jid)
+    if not job or job.get("user_id") != u.get("id"):
+        return _forbidden()
+    if not re.match(r"^[A-Za-z0-9_]+\.jpg$", fn):
+        return _forbidden("nome invalido")
+    p = os.path.join(_BUSCA_DIR, jid, fn)
+    if not os.path.exists(p):
+        return JSONResponse({"error": "nao encontrado"}, status_code=404)
+    return FileResponse(p, media_type="image/jpeg")
 
 
 @app.get("/api/gravacoes/cameras")
@@ -2857,7 +3213,7 @@ html,body{height:100%;background:#000;overflow:hidden}
 </div>
 <script src="/assets/hls-zoom.min.js"></script>
 <script>
-var KEY="__KEY__", SRC="/cam/"+KEY+"/index.m3u8";
+var KEY="__KEY__", SRC="__SRC__";
 var v=document.getElementById("v"), wrap=document.getElementById("wrap"), zlbl=document.getElementById("zlbl");
 /* ---- HLS com auto-reconexao ---- */
 function start(){
@@ -2909,7 +3265,9 @@ window.addEventListener("resize",function(){ clamp();upd(); });
 def watch_player(key: str):
     if not re.match(r"^[a-zA-Z0-9]+$", key or ""):
         return JSONResponse({"error": "invalido"}, status_code=400)
-    return HTMLResponse(_WATCH_HTML.replace("__KEY__", key), headers={"Cache-Control": "no-cache"})
+    _mb = os.getenv("STREAM_EMBED_BASE", "https://media.grupocorexia.com.br/cam").rstrip("/")
+    _src = "%s/%s/index.m3u8" % (_mb, key)
+    return HTMLResponse(_WATCH_HTML.replace("__KEY__", key).replace("__SRC__", _src), headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/mosaico/{mid}")
@@ -2989,6 +3347,67 @@ _PORTAL_FATURAS_JS = r"""<script>/* corexia-portal-faturas */(function(){
  fixHrefs(); try{new MutationObserver(fixHrefs).observe(document.body||document.documentElement,{childList:true,subtree:true});}catch(e){}
 })();</script>"""
 
+
+_PORTAL_MENU_JS = r"""<script>/* corexia-portal-menu */(function(){
+ var t=localStorage.getItem('corexia_token'); if(!t)return;
+ var IS_CLI=false;
+ function onPortal(){ return location.pathname.indexOf('/portal')===0; }
+ function findByText(words){ var ns=document.querySelectorAll('a,button,li,[role=menuitem]');
+   for(var i=0;i<ns.length;i++){ var el=ns[i]; if(el.children.length>4)continue; var s=(el.textContent||'').replace(/\s+/g,' ').trim().toLowerCase();
+     if(s.length<=16){ for(var j=0;j<words.length;j++){ if(s.indexOf(words[j])>=0) return el; } } } return null; }
+ function relabel(node,txt){ var w=node.querySelectorAll('*'); for(var i=0;i<w.length;i++){ if(w[i].children.length===0 && (w[i].textContent||'').trim().length>1){ w[i].textContent=txt; return; } } node.textContent=txt; }
+ function seticon(node,path){ try{ var sv=node.querySelector('svg'); if(sv){ sv.setAttribute('viewBox','0 0 24 24'); sv.setAttribute('fill','none'); sv.setAttribute('stroke','currentColor'); sv.setAttribute('stroke-width','2'); sv.setAttribute('stroke-linecap','round'); sv.setAttribute('stroke-linejoin','round'); sv.innerHTML=path; } }catch(e){} }
+ function mkItem(id,ref,txt,icon,onclick){ var a=ref.cloneNode(true); a.id=id; a.removeAttribute('href'); a.style.cursor='pointer'; a.classList.remove('active'); relabel(a,txt); if(icon)seticon(a,icon); a.addEventListener('click',onclick,true); return a; }
+ var MOS_ICON='<rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect>';
+ var BUSCA_ICON='<circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>';
+ function goMos(e){ if(e){e.preventDefault();e.stopPropagation();} window.location.href='/meus-mosaicos?t='+encodeURIComponent(t); }
+ function goBusca(e){ if(e){e.preventDefault();e.stopPropagation();} window.location.assign('/portal/busca'); }
+ function killFab(id){ var x=document.getElementById(id); if(x&&x.parentNode)x.parentNode.removeChild(x); }
+ function fab(id,txt,side,onclick){ if(document.getElementById(id))return; var b=document.createElement('button'); b.id=id; b.type='button'; b.textContent=txt;
+   b.style.cssText='position:fixed;'+side+':16px;bottom:16px;z-index:99999;background:#f97316;color:#111;font-weight:700;font-family:system-ui,sans-serif;font-size:14px;padding:10px 16px;border:0;border-radius:24px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.3)';
+   b.addEventListener('click',onclick); document.body.appendChild(b); }
+ function ensure(){
+   if(!onPortal())return;
+   var anchor=findByText(['ajuste']);
+   if(anchor&&anchor.parentNode){
+     killFab('cx-mos-btn'); killFab('cx-busca-fab');
+     if(IS_CLI && !document.getElementById('cx-mos-item')){
+       var m=mkItem('cx-mos-item',anchor,'Meu Mosaico',MOS_ICON,goMos);
+       anchor.parentNode.insertBefore(m, anchor.nextSibling);
+     }
+     var busAnchor=document.getElementById('cx-mos-item')||anchor;
+     if(!document.getElementById('cx-busca-item')){
+       var b=mkItem('cx-busca-item',busAnchor,'Pergunte ao Corexia',BUSCA_ICON,goBusca);
+       busAnchor.parentNode.insertBefore(b, busAnchor.nextSibling);
+     }
+   } else {
+     if(IS_CLI) fab('cx-mos-btn','Meu Mosaico','left',goMos);
+     fab('cx-busca-fab','Pergunte ao Corexia','right',goBusca);
+   }
+ }
+ var pend=false; function sched(){ if(pend)return; pend=true; setTimeout(function(){pend=false; ensure();},140); }
+ function start(){ ensure(); try{ new MutationObserver(sched).observe(document.body||document.documentElement,{childList:true,subtree:true}); }catch(e){} window.addEventListener('popstate',sched); }
+ fetch('/api/auth/me',{headers:{'Authorization':'Bearer '+t}}).then(function(r){return r.json();}).then(function(u){ IS_CLI=(u&&u.role==='cliente'); start(); }).catch(function(){ start(); });
+})();</script>"""
+
+
+_PORTAL_BUSCA_JS = r"""<script>/* corexia-portal-busca */(function(){
+  if(!localStorage.getItem('corexia_token'))return;
+  function onPortal(){ return location.pathname.indexOf('/portal')===0; }
+  function go(){ window.location.assign('/portal/busca'); }
+  function tick(){
+    var f=document.getElementById('cx-busca-fab');
+    if(!onPortal()){ if(f&&f.parentNode)f.parentNode.removeChild(f); return; }
+    if(f) return;
+    var b=document.createElement('button'); b.id='cx-busca-fab'; b.type='button';
+    b.innerHTML='<span style="font-size:16px;line-height:1">&#128269;</span> Pergunte ao Corexia';
+    b.style.cssText='position:fixed;right:18px;bottom:18px;z-index:99999;display:inline-flex;align-items:center;gap:8px;background:#f97316;color:#1a1205;border:none;border-radius:26px;padding:12px 18px;font-weight:700;font-size:14px;font-family:system-ui,-apple-system,sans-serif;box-shadow:0 6px 22px rgba(0,0,0,.4);cursor:pointer';
+    b.addEventListener('click',go);
+    document.body.appendChild(b);
+  }
+  setInterval(tick,1500); tick();
+  window.addEventListener('popstate',tick);
+})();</script>"""
 
 _PORTAL_MOS_JS = """<script>/* corexia-portal-mos */(function(){
  var t=localStorage.getItem('corexia_token'); if(!t)return;
@@ -3524,10 +3943,9 @@ def spa(full_path: str, request: Request):
                 _inj += _COM_BRIDGE
             if _WL_JS and "corexia-wl" not in _html:
                 _inj += _WL_JS
-            if "corexia-portal-mos" not in _html:
-                _inj += _PORTAL_MOS_JS
-            if "corexia-portal-logout" not in _html:
-                _inj += _PORTAL_LOGOUT_JS
+            if "corexia-portal-menu" not in _html:
+                _inj += _PORTAL_MENU_JS
+            # (Sair da barra removido — usa o logout nativo do portal, embaixo do nome do cliente)
             if "corexia-portal-thumb" not in _html:
                 _inj += _PORTAL_THUMB_JS
             if "corexia-portal-rec" not in _html:
@@ -3536,6 +3954,7 @@ def spa(full_path: str, request: Request):
                 _inj += _PORTAL_CLIP_JS
             if "corexia-portal-faturas" not in _html:
                 _inj += _PORTAL_FATURAS_JS
+            # (busca FAB e meu-mosaico agora sao itens de menu via _PORTAL_MENU_JS)
             if "corexia-net" not in _html:
                 _inj += _NET_WIDGET_JS
             if "corexia-anxredir" not in _html:

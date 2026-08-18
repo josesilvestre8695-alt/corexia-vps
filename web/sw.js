@@ -1,3 +1,4 @@
+// build 2026-08-18-conciliacao
 // SW pass-through: limpa o cache velho UMA vez e depois passa tudo direto pela rede.
 // Sem cache (nada fica velho) e sem unregister (sem loop de recarga).
 self.addEventListener('install', function(){ self.skipWaiting(); });
