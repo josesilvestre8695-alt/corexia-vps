@@ -222,9 +222,33 @@ def wl_style_for_host(host):
                 css += "--primary:%s;--ring:%s;--sidebar-primary:%s;" % (br["cor_hsl"], br["cor_hsl"], br["cor_hsl"])
             if br["menu_hsl"]:
                 css += "--sidebar:%s;" % br["menu_hsl"]
-            return ("<style id='wl-theme'>:root{%s}</style><script>window.__WL__=%s;</script>"
-                    % (css, json.dumps({"logo": br["logo"], "nome": br["nome_marca"]})))
+            _nm = (br["nome_marca"] or "").replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
+            _th = br.get("cor_menu") or br.get("cor") or "#0f1115"
+            _meta = ('<meta name="apple-mobile-web-app-title" content="%s">'
+                     '<meta name="theme-color" content="%s">'
+                     '<link rel="apple-touch-icon" href="/pwa-icon-180.png">') % (_nm, _th)
+            return ("<style id='wl-theme'>:root{%s}</style>%s<script>window.__WL__=%s;</script>"
+                    % (css, _meta, json.dumps({"logo": br["logo"], "nome": br["nome_marca"]})))
     return ""
+
+
+def wl_brand_for_host(host):
+    """dict de marca do provedor cujo dominio == host, ou None (p/ PWA white-label)."""
+    host = (host or "").split(":")[0].lower().strip()
+    if not host or host in ("grupocorexia.com.br", "www.grupocorexia.com.br", "localhost", "127.0.0.1"):
+        return None
+    try:
+        c = _db(); rows = c.execute("SELECT id, data FROM entities WHERE entity='Provedor'").fetchall(); c.close()
+    except Exception:
+        return None
+    for r in rows:
+        try:
+            d = json.loads(r["data"])
+        except Exception:
+            continue
+        if (d.get("dominio") or "").lower().strip() == host:
+            br = _branding_de(d); br["pid"] = r["id"]; return br
+    return None
 
 
 WHITE_LABEL_JS = """<script>/* corexia-wl */(function(){
@@ -239,8 +263,12 @@ WHITE_LABEL_JS = """<script>/* corexia-wl */(function(){
   if(b.logo){var ims=document.querySelectorAll('img');for(var i=0;i<ims.length;i++){var s=(ims[i].getAttribute('src')||'').toLowerCase();if(s.indexOf('logo')>=0 && s.indexOf('banner')<0){if((ims[i].src||'').indexOf(b.logo)<0)ims[i].src=b.logo;}}}
  }
  var CUR=null,pend=false;
- function sched(){if(pend||!CUR)return;pend=true;setTimeout(function(){pend=false;apply(CUR);},120);}
- try{var mo=new MutationObserver(sched);mo.observe(document.documentElement,{childList:true,subtree:true});}catch(e){}
+ function sched(){if(pend||!CUR)return;pend=true;setTimeout(function(){pend=false;apply(CUR);},250);}
+ var _ps=history.pushState,_rs=history.replaceState;
+ history.pushState=function(){var r=_ps.apply(this,arguments);sched();return r;};
+ history.replaceState=function(){var r=_rs.apply(this,arguments);sched();return r;};
+ window.addEventListener('popstate',sched);
+ setInterval(sched,3000);
  if(window.__WL__){CUR={logo:window.__WL__.logo,nome:window.__WL__.nome};apply(CUR);}
  var done=false;
  function tryFetch(){ if(done)return; var t=localStorage.getItem('corexia_token'); if(!t)return;

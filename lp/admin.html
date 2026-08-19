@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Corexia · Analytics</title>
+  <meta name="robots" content="noindex,nofollow">
+  <link rel="icon" type="image/png" href="/lp-assets/logo-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/lp-assets/vendor/d3.min.js"></script>
+  <script src="/lp-assets/vendor/topojson-client.min.js"></script>
+  <style>
+    :root{
+      --bg:#0D0D0D;--card:#151515;--card2:#1A1A1A;--border:#262626;
+      --accent:#FF5C1A;--accent-soft:rgba(255,92,26,.12);--accent-glow:rgba(255,92,26,.35);
+      --ink:#F5F5F3;--ink-2:#C9C8C2;--muted:#8A8A84;--grid:#232323;
+    }
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{
+      font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--ink);
+      line-height:1.5;-webkit-font-smoothing:antialiased;min-height:100vh;
+    }
+    button{font-family:inherit;cursor:pointer}
+    .hidden{display:none!important}
+
+    /* ---------- Login ---------- */
+    .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+    .login-card{
+      width:min(380px,100%);background:linear-gradient(180deg,#191919,#111);
+      border:1px solid #2C2C2C;border-radius:20px;padding:40px 34px;text-align:center;
+      box-shadow:0 40px 90px -40px rgba(0,0,0,.9),0 0 60px -34px var(--accent-glow);
+    }
+    .login-card img{width:56px;margin:0 auto 14px}
+    .login-card h1{font-size:1.25rem;font-weight:800;letter-spacing:-.01em}
+    .login-card p{color:var(--muted);font-size:.85rem;margin:6px 0 24px}
+    .login-card input{
+      width:100%;padding:14px 16px;border-radius:12px;background:#0E0E0E;
+      border:1.5px solid #333;color:#fff;font-family:inherit;font-size:1rem;
+      text-align:center;transition:border-color .2s;
+    }
+    .login-card input:focus{outline:none;border-color:var(--accent)}
+    .login-btn{
+      width:100%;margin-top:14px;padding:14px;border:none;border-radius:12px;
+      background:linear-gradient(135deg,#FF7A33,var(--accent));color:#fff;
+      font-weight:700;font-size:1rem;transition:transform .2s,box-shadow .2s;
+    }
+    .login-btn:hover{transform:translateY(-1px);box-shadow:0 10px 26px -10px var(--accent-glow)}
+    .login-err{display:none;color:#FF8A5C;font-size:.84rem;font-weight:600;margin-top:12px}
+    .login-err.show{display:block;animation:shake .35s}
+    @keyframes shake{0%,100%{transform:none}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+
+    /* ---------- Shell ---------- */
+    .topbar{
+      position:sticky;top:0;z-index:50;height:62px;
+      background:rgba(13,13,13,.9);backdrop-filter:blur(12px);
+      border-bottom:1px solid #1E1E1E;
+      display:flex;align-items:center;justify-content:space-between;
+      padding:0 22px;gap:14px;
+    }
+    .topbar .brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:.05em;font-size:.98rem}
+    .topbar .brand img{width:28px;height:28px}
+    .topbar .brand small{color:var(--muted);font-weight:600;letter-spacing:0}
+    .live-pill{
+      display:flex;align-items:center;gap:8px;font-size:.78rem;font-weight:700;
+      color:#FFB08A;background:var(--accent-soft);border:1px solid rgba(255,92,26,.3);
+      padding:6px 13px;border-radius:100px;
+    }
+    .live-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 1.6s infinite}
+    @keyframes pulse{0%,100%{box-shadow:0 0 0 0 var(--accent-glow)}60%{box-shadow:0 0 0 7px transparent}}
+    .logout{
+      background:#1D1D1D;border:1px solid #333;color:#AAA;font-size:.8rem;font-weight:600;
+      padding:8px 16px;border-radius:9px;transition:.2s;
+    }
+    .logout:hover{color:#fff;border-color:var(--accent)}
+
+    .wrap{width:min(1280px,96%);margin:22px auto 60px;display:grid;gap:16px}
+
+    .card{
+      background:var(--card);border:1px solid var(--border);border-radius:16px;padding:22px;
+    }
+    .card-title{
+      font-size:.75rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;
+      color:var(--muted);margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:10px;
+    }
+    .card-title .sub{font-weight:600;letter-spacing:0;text-transform:none;font-size:.75rem;color:#5E5E58}
+
+    /* ---------- KPIs ---------- */
+    .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+    .kpi{
+      background:var(--card);border:1px solid var(--border);border-radius:14px;
+      padding:16px 18px;display:flex;flex-direction:column;gap:2px;
+    }
+    .kpi .k-label{font-size:.68rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+    .kpi .k-value{font-size:1.9rem;font-weight:800;letter-spacing:-.02em;color:var(--ink);font-variant-numeric:tabular-nums}
+    .kpi .k-hint{font-size:.7rem;color:#5E5E58;font-weight:500}
+    .kpi.k-live{border-color:rgba(255,92,26,.4);background:linear-gradient(180deg,rgba(255,92,26,.07),var(--card))}
+    .kpi.k-live .k-label{color:#FFB08A;display:flex;align-items:center;gap:6px}
+
+    /* ---------- Grid rows ---------- */
+    .row-2{display:grid;grid-template-columns:7fr 5fr;gap:16px}
+
+    /* ---------- Alternador Globo / Mapa ---------- */
+    .map-toggle{display:inline-flex;gap:3px;background:#101010;border:1px solid var(--border);border-radius:9px;padding:3px}
+    .map-toggle button{
+      background:none;border:none;color:var(--muted);font-family:inherit;
+      font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+      padding:6px 13px;border-radius:6px;transition:.2s;
+    }
+    .map-toggle button:hover{color:var(--ink-2)}
+    .map-toggle button.active{background:var(--accent-soft);color:#FFB08A;box-shadow:inset 0 0 0 1px rgba(255,92,26,.3)}
+    .map-stage{position:relative;height:470px;overflow:hidden;border-radius:12px}
+    .map-stage > *{position:absolute;inset:0}
+
+    /* ---------- Globo (D3 ortográfico) ---------- */
+    /* pan-y: girar no toque continua funcionando e a página não fica presa */
+    #globe{display:flex;align-items:center;justify-content:center;cursor:grab;touch-action:pan-y}
+    .globe-zoom{position:absolute;top:10px;left:10px;display:flex;flex-direction:column;gap:4px;z-index:5}
+    .globe-zoom button{
+      width:30px;height:30px;border-radius:8px;border:1px solid var(--border);
+      background:#161616;color:#DDD;font-size:1.05rem;font-weight:700;line-height:1;
+      display:flex;align-items:center;justify-content:center;transition:.2s;
+    }
+    .globe-zoom button:hover{border-color:var(--accent);color:var(--accent)}
+    .geo-marker .badge{
+      position:absolute;top:-2px;right:-2px;
+      background:var(--accent);color:#fff;font-size:.62rem;font-weight:800;
+      min-width:15px;height:15px;border-radius:8px;
+      display:flex;align-items:center;justify-content:center;
+      border:1.5px solid #0D0D0D;padding:0 3px;
+    }
+    #globe.dragging{cursor:grabbing}
+    #globe svg{width:100%;height:100%;display:block;overflow:visible}
+    .globe-sphere{fill:url(#oceanGrad);stroke:rgba(255,92,26,.28);stroke-width:1}
+    .globe-graticule{fill:none;stroke:#242424;stroke-width:.5}
+    .globe-land{fill:#1C1C1C;stroke:#2E2E2E;stroke-width:.5}
+    .globe-halo{fill:none;stroke:rgba(255,92,26,.14);stroke-width:8}
+    .gpt-core{fill:var(--accent);cursor:pointer}
+    .gpt-glow{fill:rgba(255,92,26,.25)}
+    .gpt-ring{fill:none;stroke:var(--accent);stroke-width:1.4;transform-origin:center;transform-box:fill-box}
+    .gpt.live .gpt-ring{animation:gpulse 1.9s ease-out infinite}
+    .gpt:not(.live) .gpt-core{fill:rgba(255,92,26,.5)}
+    .gpt:not(.live) .gpt-ring{display:none}
+    @keyframes gpulse{0%{opacity:.85;transform:scale(.5)}100%{opacity:0;transform:scale(3.2)}}
+    .gpt.fresh .gpt-core{animation:gpop .55s cubic-bezier(.2,.9,.3,1.5)}
+    @keyframes gpop{0%{transform:scale(0)}70%{transform:scale(1.9)}100%{transform:scale(1)}}
+    .globe-hint{
+      position:absolute;bottom:8px;left:50%;transform:translateX(-50%);
+      font-size:.7rem;color:#5E5E58;font-weight:600;pointer-events:none;
+      display:flex;gap:14px;white-space:nowrap;
+    }
+    .globe-tip{
+      position:absolute;pointer-events:none;display:none;z-index:6;
+      background:#1E1E1E;border:1px solid #333;border-radius:9px;
+      padding:7px 11px;font-size:.78rem;color:var(--ink);white-space:nowrap;
+      box-shadow:0 10px 26px -10px rgba(0,0,0,.75);transform:translate(-50%,-140%);
+    }
+    .globe-tip b{color:var(--accent)}
+    .globe-tip small{display:block;color:var(--muted);font-size:.7rem;margin-top:2px}
+
+    /* ---------- Mapa real (Leaflet) ---------- */
+    #map{height:100%;border-radius:12px;overflow:hidden;background:#0A0A0A;border:1px solid #1E1E1E}
+    .leaflet-container{background:#0A0A0A;font-family:'Inter',sans-serif}
+    .leaflet-control-zoom a{background:#161616!important;color:#DDD!important;border-color:#2A2A2A!important}
+    .leaflet-control-zoom a:hover{background:#222!important;color:var(--accent)!important}
+    .leaflet-control-attribution{background:rgba(13,13,13,.75)!important;color:#666!important}
+    .leaflet-control-attribution a{color:#888!important}
+    .leaflet-popup-content-wrapper,.leaflet-popup-tip{background:#1C1C1C;color:#EEE;box-shadow:0 10px 30px -10px rgba(0,0,0,.8)}
+    .leaflet-popup-content{font-family:'Inter',sans-serif;font-size:12.5px;margin:10px 14px}
+    .geo-marker{position:relative;width:44px;height:44px}
+    .geo-marker .core{
+      position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+      width:12px;height:12px;border-radius:50%;
+      background:rgba(255,92,26,.55);border:2px solid #0D0D0D;
+    }
+    .geo-marker.live .core{background:var(--accent);box-shadow:0 0 12px var(--accent-glow)}
+    .geo-marker .pulse-ring{
+      position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+      width:12px;height:12px;border-radius:50%;
+      border:2px solid var(--accent);opacity:0;
+    }
+    .geo-marker.live .pulse-ring{animation:leafPulse 1.8s ease-out infinite}
+    @keyframes leafPulse{0%{opacity:.9;width:12px;height:12px}100%{opacity:0;width:44px;height:44px}}
+    .geo-marker.pop .core{animation:popIn .5s cubic-bezier(.2,.9,.3,1.4)}
+    @keyframes popIn{0%{transform:translate(-50%,-50%) scale(0)}70%{transform:translate(-50%,-50%) scale(1.9)}100%{transform:translate(-50%,-50%) scale(1)}}
+    .map-legend{display:flex;gap:18px;justify-content:center;margin-top:10px;font-size:.74rem;color:var(--muted);font-weight:600}
+    .map-legend span{display:flex;align-items:center;gap:6px}
+    .lg-dot{width:8px;height:8px;border-radius:50%}
+
+    /* ---------- Feed ---------- */
+    .feed{display:flex;flex-direction:column;gap:2px;max-height:470px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#333 transparent}
+    .feed-item{
+      display:flex;gap:11px;align-items:flex-start;padding:10px 8px;border-radius:10px;
+      font-size:.86rem;color:var(--ink-2);
+    }
+    .feed-item:hover{background:#191919}
+    .feed-item.fresh{animation:slideIn .45s ease}
+    @keyframes slideIn{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
+    .feed-ico{
+      width:28px;height:28px;border-radius:9px;flex:none;margin-top:1px;
+      background:var(--accent-soft);border:1px solid rgba(255,92,26,.25);
+      display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:.8rem;
+    }
+    .feed-item b{color:#fff;font-weight:700}
+    .feed-time{margin-left:auto;flex:none;font-size:.72rem;color:#5E5E58;font-weight:600;padding-top:3px}
+    .empty{color:#5E5E58;font-size:.85rem;text-align:center;padding:30px 10px}
+
+    /* ---------- Chart ---------- */
+    .chart-box{position:relative}
+    .chart-box svg{width:100%;height:230px;display:block}
+    .chart-tip{
+      position:absolute;pointer-events:none;display:none;
+      background:#1E1E1E;border:1px solid #333;border-radius:9px;
+      padding:7px 11px;font-size:.78rem;color:var(--ink);white-space:nowrap;
+      box-shadow:0 10px 26px -10px rgba(0,0,0,.7);z-index:5;
+      transform:translate(-50%,-115%);
+    }
+    .chart-tip b{color:var(--accent);font-variant-numeric:tabular-nums}
+
+    /* ---------- Funil ---------- */
+    .funnel{display:flex;flex-direction:column;gap:9px}
+    .f-row{display:grid;grid-template-columns:132px 1fr 86px;align-items:center;gap:12px}
+    .f-label{font-size:.78rem;font-weight:600;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .f-track{height:26px;background:#101010;border-radius:6px;overflow:hidden;border:1px solid #1E1E1E}
+    .f-bar{
+      height:100%;border-radius:0 4px 4px 0;
+      background:linear-gradient(90deg,rgba(255,92,26,.55),var(--accent));
+      transition:width .6s cubic-bezier(.4,0,.2,1);min-width:2px;
+    }
+    .f-val{font-size:.78rem;font-weight:700;color:var(--ink);text-align:right;font-variant-numeric:tabular-nums}
+    .f-val small{color:var(--muted);font-weight:600}
+
+    /* ---------- Leads ---------- */
+    .table-scroll{overflow-x:auto}
+    table{width:100%;border-collapse:collapse;font-size:.86rem;min-width:760px}
+    th{
+      text-align:left;font-size:.68rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+      color:var(--muted);padding:10px 12px;border-bottom:1px solid var(--border);
+    }
+    td{padding:12px;border-bottom:1px solid #1C1C1C;color:var(--ink-2)}
+    td.strong{color:#fff;font-weight:600}
+    tr:hover td{background:#181818}
+    .wa-btn{
+      display:inline-flex;align-items:center;gap:6px;
+      background:rgba(30,190,93,.12);border:1px solid rgba(30,190,93,.35);color:#4ADE80;
+      font-size:.76rem;font-weight:700;padding:6px 12px;border-radius:8px;text-decoration:none;transition:.2s;
+    }
+    .wa-btn:hover{background:rgba(30,190,93,.25)}
+    .csv-btn{
+      background:#1D1D1D;border:1px solid #333;color:var(--ink-2);
+      font-size:.76rem;font-weight:700;padding:7px 14px;border-radius:8px;transition:.2s;
+    }
+    .csv-btn:hover{border-color:var(--accent);color:#fff}
+    .momento-tag{
+      display:inline-block;font-size:.7rem;font-weight:700;
+      background:var(--accent-soft);color:#FFB08A;border:1px solid rgba(255,92,26,.25);
+      padding:3px 10px;border-radius:100px;white-space:nowrap;
+    }
+
+    @media(max-width:1000px){
+      .kpis{grid-template-columns:repeat(3,1fr)}
+      .row-2{grid-template-columns:1fr}
+    }
+    @media(max-width:560px){
+      .kpis{grid-template-columns:repeat(2,1fr)}
+      .f-row{grid-template-columns:100px 1fr 78px}
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ===== LOGIN ===== -->
+  <div class="login-wrap" id="loginView">
+    <div class="login-card">
+      <img src="/lp-assets/logo-icon.png" alt="Corexia">
+      <h1>Corexia · Analytics</h1>
+      <p>Painel em tempo real da landing page</p>
+      <form id="loginForm">
+        <input type="password" id="pwd" placeholder="Senha de acesso" autocomplete="current-password">
+        <button class="login-btn" type="submit">Entrar</button>
+        <div class="login-err" id="loginErr">Senha incorreta. Tenta de novo.</div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== DASHBOARD ===== -->
+  <div id="dashView" class="hidden">
+    <header class="topbar">
+      <div class="brand">
+        <img src="/lp-assets/logo-icon.png" alt="">
+        <img src="/lp-assets/logo-wordmark.png" alt="COREXIA" style="height:12px;width:auto">
+        <small>· Analytics</small>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span class="live-pill"><span class="live-dot"></span> AO VIVO · atualiza a cada 5s</span>
+        <button class="logout" id="logoutBtn">Sair</button>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <!-- KPIs -->
+      <div class="kpis">
+        <div class="kpi">
+          <span class="k-label">Sessões hoje</span>
+          <span class="k-value" id="kVisitors">0</span>
+          <span class="k-hint">abas únicas, não pessoas</span>
+        </div>
+        <div class="kpi k-live">
+          <span class="k-label"><span class="live-dot"></span> Agora</span>
+          <span class="k-value" id="kActive">0</span>
+          <span class="k-hint">com atividade nos últimos 5 min</span>
+        </div>
+        <div class="kpi">
+          <span class="k-label">Cliques em CTA</span>
+          <span class="k-value" id="kCta">0</span>
+          <span class="k-hint">hoje</span>
+        </div>
+        <div class="kpi">
+          <span class="k-label">Forms iniciados</span>
+          <span class="k-value" id="kStarted">0</span>
+          <span class="k-hint">hoje</span>
+        </div>
+        <div class="kpi">
+          <span class="k-label">Forms completos</span>
+          <span class="k-value" id="kCompleted">0</span>
+          <span class="k-hint">hoje</span>
+        </div>
+        <div class="kpi">
+          <span class="k-label">Conversão</span>
+          <span class="k-value" id="kConv">0%</span>
+          <span class="k-hint">completos / sessões de hoje</span>
+        </div>
+      </div>
+
+      <!-- Mapa + Feed -->
+      <div class="row-2">
+        <div class="card">
+          <div class="card-title">
+            Acessos em tempo real
+            <span style="display:flex;align-items:center;gap:12px">
+              <span class="sub" id="mapCount"></span>
+              <span class="map-toggle" id="mapToggle">
+                <button type="button" class="active" data-view="globe">Globo</button>
+                <button type="button" data-view="map">Mapa</button>
+              </span>
+            </span>
+          </div>
+          <div class="map-stage">
+            <div id="globe">
+              <div class="globe-tip" id="globeTip"></div>
+              <div class="globe-zoom">
+                <button type="button" id="zoomIn" aria-label="Aproximar">+</button>
+                <button type="button" id="zoomOut" aria-label="Afastar">&minus;</button>
+              </div>
+              <div class="globe-hint"><span>Arraste para girar</span><span>Use + / &minus; para zoom</span><span>Clique no ponto para detalhes</span></div>
+            </div>
+            <div id="map" class="hidden"></div>
+          </div>
+          <div class="map-legend">
+            <span><span class="lg-dot" style="background:var(--accent);box-shadow:0 0 8px var(--accent-glow)"></span> ativo agora</span>
+            <span><span class="lg-dot" style="background:rgba(255,92,26,.45)"></span> últimas 24h</span>
+            <span style="color:#4E4E48">acessos de rede interna/VPN não têm localização e ficam fora do mapa</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Últimos eventos <span class="sub">atualiza a cada 5s</span></div>
+          <div class="feed" id="feed"><div class="empty">Aguardando os primeiros acessos…</div></div>
+        </div>
+      </div>
+
+      <!-- Gráfico + Funil -->
+      <div class="row-2">
+        <div class="card">
+          <div class="card-title">Visitantes por hora <span class="sub">últimas 24h</span></div>
+          <div class="chart-box" id="chartBox">
+            <div class="chart-tip" id="chartTip"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Funil do formulário <span class="sub">sessões únicas · todo o período</span></div>
+          <div class="funnel" id="funnel"><div class="empty">Sem dados ainda</div></div>
+        </div>
+      </div>
+
+      <!-- Leads -->
+      <div class="card">
+        <div class="card-title">
+          Leads capturados <span class="sub" id="leadCount"></span>
+          <button class="csv-btn" id="csvBtn">⬇ Exportar CSV</button>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr><th>Nome</th><th>Provedor</th><th>WhatsApp</th><th>Cidade</th><th>Momento</th><th>Data</th><th></th></tr>
+            </thead>
+            <tbody id="leadsBody">
+              <tr><td colspan="7" class="empty">Nenhum lead ainda. Compartilha a LP! 🚀</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    /* =====================================================
+       Corexia Analytics: front do painel (JS puro)
+       ===================================================== */
+    let TOKEN = sessionStorage.getItem('cx_admin_token') || null;
+    let pollTimer = null;
+    let lastFeedId = 0;
+    let lastHourlyJson = '';
+    let leadsCache = [];
+    const $ = id => document.getElementById(id);
+
+    /* ---------- Login ---------- */
+    function showLogin() {
+      clearInterval(pollTimer);
+      if (GLOBE.timer) { GLOBE.timer.stop(); GLOBE.timer = null; }
+      $('dashView').classList.add('hidden');
+      $('loginView').classList.remove('hidden');
+      setTimeout(() => $('pwd').focus(), 100);
+    }
+    function showDash() {
+      $('loginView').classList.add('hidden');
+      $('dashView').classList.remove('hidden');
+      if (!GLOBE.ready && !GLOBE.booting) {
+        GLOBE.booting = true;
+        initGlobe().catch(e => { GLOBE.booting = false; console.error('globo:', e); });
+      } else if (GLOBE.ready) {
+        startGlobeTimer();
+        setTimeout(resizeGlobe, 60);
+      }
+      poll();
+      clearInterval(pollTimer);
+      pollTimer = setInterval(poll, 5000); // auto-refresh: sensação de tempo real
+    }
+    $('loginForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      try {
+        const r = await fetch('/api/lp/login', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: $('pwd').value })
+        });
+        if (!r.ok) throw 0;
+        TOKEN = (await r.json()).token;
+        sessionStorage.setItem('cx_admin_token', TOKEN);
+        $('loginErr').classList.remove('show');
+        showDash();
+      } catch {
+        $('loginErr').classList.add('show');
+        $('pwd').select();
+      }
+    });
+    $('logoutBtn').addEventListener('click', () => {
+      sessionStorage.removeItem('cx_admin_token');
+      TOKEN = null;
+      showLogin();
+    });
+
+    /* ---------- Poll ---------- */
+    async function poll() {
+      try {
+        const r = await fetch('/api/lp/stats', { headers: { Authorization: 'Bearer ' + TOKEN } });
+        if (r.status === 401) { sessionStorage.removeItem('cx_admin_token'); return showLogin(); }
+        const d = await r.json();
+        renderKpis(d);
+        updateMap(d);
+        renderFeed(d.feed, d.now);
+        renderChart(d.hourly);
+        renderFunnel(d.funnel);
+        renderLeads(d.leads);
+      } catch (e) { /* servidor fora do ar momentaneamente, tenta no próximo tick */ }
+    }
+
+    /* ---------- KPIs ---------- */
+    function renderKpis(d) {
+      const k = d.kpis;
+      $('kVisitors').textContent = k.visitorsToday;
+      $('kActive').textContent = k.activeNow;
+      $('kCta').textContent = k.ctaClicks;
+      $('kStarted').textContent = k.formsStarted;
+      $('kCompleted').textContent = k.formsCompleted;
+      // sem sessões hoje mas com conversão (ex.: form completado após a virada do dia): não mente "0%"
+      $('kConv').textContent = k.visitorsToday
+        ? Math.round(100 * k.formsCompleted / k.visitorsToday) + '%'
+        : (k.formsCompleted ? 'n/d' : '0%');
+    }
+
+    /* ---------- Globo 3D (D3, projeção ortográfica) ---------- */
+    const GLOBE = {
+      svg: null, proj: null, path: null, landSel: null, ptsSel: null, halo: null,
+      rotation: [50, -10, 0], baseR: 0, world: null, timer: null,
+      lastInteract: 0, points: [], grouped: [], now: 0,
+      ready: false, booting: false, W: 0, H: 0
+    };
+    const hideGlobeTip = () => { $('globeTip').style.display = 'none'; };
+
+    // agrupa visitantes que caem na mesma coordenada (evita pontos empilhados)
+    function groupPoints(points) {
+      const g = new Map();
+      points.forEach(p => {
+        if (p.lat == null || p.lng == null) return;
+        const key = p.lat.toFixed(2) + ',' + p.lng.toFixed(2);
+        if (!g.has(key)) g.set(key, { key, lat: p.lat, lng: p.lng, city: p.city, region: p.region, count: 0, last: 0 });
+        const it = g.get(key);
+        it.count++;
+        it.last = Math.max(it.last, p.last_seen);
+      });
+      return [...g.values()];
+    }
+
+    async function initGlobe() {
+      const box = $('globe');
+      const W = box.clientWidth || 620, H = box.clientHeight || 470;
+      GLOBE.W = W; GLOBE.H = H;
+      const R = Math.min(W, H) / 2 - 16;
+      GLOBE.baseR = R;
+
+      const svg = d3.select(box).insert('svg', ':first-child')
+        .attr('viewBox', `0 0 ${W} ${H}`)
+        .attr('preserveAspectRatio', 'xMidYMid meet');
+      svg.append('defs').html(
+        '<radialGradient id="oceanGrad" cx="34%" cy="28%" r="78%">' +
+        '<stop offset="0%" stop-color="#151515"/><stop offset="70%" stop-color="#0E0E0E"/>' +
+        '<stop offset="100%" stop-color="#080808"/></radialGradient>'
+      );
+
+      const proj = d3.geoOrthographic().scale(R).translate([W / 2, H / 2]).clipAngle(90).rotate(GLOBE.rotation);
+      const path = d3.geoPath(proj);
+      const g = svg.append('g');
+      GLOBE.halo = g.append('circle').attr('class', 'globe-halo').attr('cx', W / 2).attr('cy', H / 2).attr('r', R + 5);
+      g.append('path').attr('class', 'globe-sphere').datum({ type: 'Sphere' });
+      g.append('path').attr('class', 'globe-graticule').datum(d3.geoGraticule10());
+      GLOBE.landSel = g.append('g');
+      GLOBE.ptsSel = svg.append('g');
+      Object.assign(GLOBE, { svg, proj, path });
+
+      // interação: arrastar gira, scroll dá zoom
+      svg.call(d3.drag()
+        .on('start', () => { box.classList.add('dragging'); hideGlobeTip(); GLOBE.lastInteract = Date.now(); })
+        .on('drag', ev => {
+          const k = 78 / proj.scale();
+          GLOBE.rotation[0] += ev.dx * k;
+          GLOBE.rotation[1] = Math.max(-90, Math.min(90, GLOBE.rotation[1] - ev.dy * k));
+          GLOBE.lastInteract = Date.now();
+          proj.rotate(GLOBE.rotation);
+          renderGlobe();
+        })
+        .on('end', () => box.classList.remove('dragging')));
+
+      // zoom só com Ctrl/Cmd + roda, para não sequestrar o scroll da página
+      box.addEventListener('wheel', ev => {
+        if (!ev.ctrlKey && !ev.metaKey) return;
+        ev.preventDefault();
+        GLOBE.lastInteract = Date.now();
+        hideGlobeTip();
+        const next = proj.scale() * (ev.deltaY < 0 ? 1.14 : 1 / 1.14);
+        proj.scale(Math.max(GLOBE.baseR * 0.85, Math.min(GLOBE.baseR * 5, next)));
+        renderGlobe();
+      }, { passive: false });
+      box.addEventListener('mouseleave', hideGlobeTip);
+      $('zoomIn').addEventListener('click', () => globeZoom(1.3));
+      $('zoomOut').addEventListener('click', () => globeZoom(1 / 1.3));
+
+      // países reais (topojson servido localmente)
+      try {
+        const topo = await (await fetch('/lp-assets/vendor/countries-110m.json')).json();
+        GLOBE.world = topojson.feature(topo, topo.objects.countries).features;
+      } catch (e) {
+        GLOBE.world = [];
+      }
+      GLOBE.ready = true;
+      renderGlobe();
+      startGlobeTimer();
+      addEventListener('resize', resizeGlobe);
+    }
+
+    function globeZoom(k) {
+      if (!GLOBE.ready) return;
+      GLOBE.lastInteract = Date.now();
+      hideGlobeTip();
+      const next = GLOBE.proj.scale() * k;
+      GLOBE.proj.scale(Math.max(GLOBE.baseR * 0.85, Math.min(GLOBE.baseR * 5, next)));
+      renderGlobe();
+    }
+
+    // rotação automática suave quando ninguém está interagindo
+    function startGlobeTimer() {
+      if (GLOBE.timer) GLOBE.timer.stop();
+      GLOBE.timer = d3.timer(() => {
+        if (!GLOBE.ready || document.hidden) return;
+        if ($('dashView').classList.contains('hidden')) return;
+        if ($('globe').classList.contains('hidden')) return;
+        if (Date.now() - GLOBE.lastInteract < 4000) return;
+        GLOBE.rotation[0] += 0.11;
+        GLOBE.proj.rotate(GLOBE.rotation);
+        renderGlobe();
+      });
+    }
+
+    function resizeGlobe() {
+      if (!GLOBE.ready) return;
+      const box = $('globe');
+      const nw = box.clientWidth, nh = box.clientHeight;
+      if (!nw || !nh) return; // escondido: reavaliado quando a aba Globo voltar
+      GLOBE.W = nw; GLOBE.H = nh;
+      const nr = Math.min(nw, nh) / 2 - 16;
+      const ratio = GLOBE.baseR ? GLOBE.proj.scale() / GLOBE.baseR : 1;
+      GLOBE.baseR = nr;
+      GLOBE.svg.attr('viewBox', `0 0 ${nw} ${nh}`);
+      GLOBE.proj.scale(nr * Math.min(5, Math.max(0.85, ratio))).translate([nw / 2, nh / 2]);
+      GLOBE.halo.attr('cx', nw / 2).attr('cy', nh / 2);
+      renderGlobe();
+    }
+
+    function renderGlobe() {
+      if (!GLOBE.ready) return;
+      const { proj, path, svg } = GLOBE;
+      GLOBE.halo.attr('r', proj.scale() + 5);
+      svg.select('.globe-sphere').attr('d', path);
+      svg.select('.globe-graticule').attr('d', path);
+
+      GLOBE.landSel.selectAll('path')
+        .data(GLOBE.world || [])
+        .join('path')
+        .attr('class', 'globe-land')
+        .attr('d', path);
+
+      // join estável com TODOS os pontos: a visibilidade é só um toggle de display,
+      // assim o nó nunca é destruído sob o cursor (tooltip preso) nem re-anima a cada volta
+      const sel = GLOBE.ptsSel.selectAll('g.gpt').data(GLOBE.grouped, d => d.key);
+      sel.exit().remove();
+      const enter = sel.enter().append('g').attr('class', 'gpt fresh');
+      enter.append('circle').attr('class', 'gpt-ring');
+      enter.append('circle').attr('class', 'gpt-glow');
+      enter.append('circle').attr('class', 'gpt-core');
+      enter.each(function (d) {
+        const el = this;
+        const r = 3.6 + Math.min(3, (d.count - 1) * 1.2);
+        d3.select(el).select('.gpt-core').attr('r', r);
+        d3.select(el).select('.gpt-glow').attr('r', r + 3.4);
+        d3.select(el).select('.gpt-ring').attr('r', r + 1.5);
+        setTimeout(() => el.classList.remove('fresh'), 700);
+      });
+      // handlers só no enter: leem o dado atual do nó, não precisam ser reatribuídos
+      enter
+        .on('mouseenter click', function (ev, d) {
+          const tip = $('globeTip');
+          const boxRect = $('globe').getBoundingClientRect();
+          const svgBox = GLOBE.svg.node().getBoundingClientRect();
+          const xy = GLOBE.proj([d.lng, d.lat]);
+          if (!xy) return;
+          // o viewBox usa xMidYMid meet: pode haver letterboxing, então mapeamos pela escala real
+          const k = Math.min(svgBox.width / GLOBE.W, svgBox.height / GLOBE.H);
+          const offX = (svgBox.width - GLOBE.W * k) / 2;
+          const offY = (svgBox.height - GLOBE.H * k) / 2;
+          tip.style.display = 'block';
+          tip.style.left = (svgBox.left - boxRect.left + offX + xy[0] * k) + 'px';
+          tip.style.top = (svgBox.top - boxRect.top + offY + xy[1] * k) + 'px';
+          const viv = GLOBE.now - d.last < 5 * 60e3;
+          tip.innerHTML = `<b>${esc(d.city || 'Cidade desconhecida')}</b>${d.region ? ' · ' + esc(d.region) : ''}` +
+            `<small>${d.count} sess${d.count === 1 ? 'ão' : 'ões'} · ${viv ? 'ativa agora' : 'visto ' + rel(d.last, GLOBE.now)}</small>`;
+        })
+        .on('mouseleave', hideGlobeTip);
+
+      // por frame só o essencial: posição e visibilidade
+      const center = [-GLOBE.rotation[0], -GLOBE.rotation[1]];
+      GLOBE.ptsSel.selectAll('g.gpt')
+        .attr('transform', d => {
+          const xy = proj([d.lng, d.lat]);
+          return `translate(${xy[0]},${xy[1]})`;
+        })
+        .style('display', d => d3.geoDistance([d.lng, d.lat], center) < Math.PI / 2 ? null : 'none')
+        .classed('live', d => GLOBE.now - d.last < 5 * 60e3);
+    }
+
+    /* ---------- Alternador Globo / Mapa ---------- */
+    document.querySelectorAll('#mapToggle button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const view = btn.dataset.view;
+        document.querySelectorAll('#mapToggle button').forEach(b => b.classList.toggle('active', b === btn));
+        hideGlobeTip();
+        $('globe').classList.toggle('hidden', view !== 'globe');
+        $('map').classList.toggle('hidden', view !== 'map');
+        if (view === 'map') {
+          if (!map) {
+            initMap();
+            if (map) updateMap(GLOBE.points, GLOBE.now); // usa o payload já em memória
+          }
+          if (map) setTimeout(() => { map.invalidateSize(); fitMapOnce(); }, 60);
+        } else {
+          GLOBE.lastInteract = Date.now();
+          resizeGlobe(); // reavalia o tamanho, que fica congelado enquanto escondido
+        }
+      });
+    });
+
+    /* ---------- Mapa real do mundo (Leaflet, com zoom) ---------- */
+    let map = null, didFit = false;
+    const markers = new Map(); // session_id -> marker Leaflet
+
+    function initMap() {
+      map = L.map('map', { worldCopyJump: true }).setView([-14.2, -51.9], 4);
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        subdomains: 'abcd',
+        maxZoom: 19
+      }).addTo(map);
+      setTimeout(() => map.invalidateSize(), 150);
+    }
+
+    function markerPopup(g, now) {
+      return `<b>${esc(g.city || 'Cidade desconhecida')}</b>${g.region ? ' · ' + esc(g.region) : ''}` +
+        `<br><span style="color:#999;font-size:11px">${g.count} sess${g.count === 1 ? 'ão' : 'ões'} · visto ${rel(g.last, now)}</span>`;
+    }
+
+    function fitMapOnce() {
+      if (didFit || !map || !markers.size) return;
+      didFit = true;
+      const group = L.featureGroup([...markers.values()]);
+      map.fitBounds(group.getBounds().pad(0.5), { maxZoom: 6 });
+    }
+
+    function updateMap(d) {
+      const points = d.points || [], now = d.now;
+      // globo e mapa usam exatamente a mesma base agrupada por coordenada
+      GLOBE.points = points;
+      GLOBE.now = now;
+      GLOBE.grouped = groupPoints(points);
+      if (GLOBE.ready) renderGlobe();
+
+      const live = GLOBE.grouped.filter(g => now - g.last < 5 * 60e3).length;
+      const sessoesGeo = GLOBE.grouped.reduce((a, g) => a + g.count, 0);
+      const noGeo = d.noGeo || 0;
+      $('mapCount').textContent =
+        `${sessoesGeo} sess${sessoesGeo === 1 ? 'ão' : 'ões'} (24h) em ${GLOBE.grouped.length} local${GLOBE.grouped.length === 1 ? '' : 'is'}` +
+        ` · ${live} ativ${live === 1 ? 'o' : 'os'}` +
+        (noGeo ? ` · ${noGeo} sem localização` : '');
+      if (!map) return;
+
+      const seen = new Set();
+      GLOBE.grouped.forEach(g => {
+        seen.add(g.key);
+        const isLive = now - g.last < 5 * 60e3;
+        let m = markers.get(g.key);
+        if (!m) {
+          const icon = L.divIcon({
+            className: '',
+            html: '<div class="geo-marker pop"><span class="pulse-ring"></span><span class="core"></span>' +
+              (g.count > 1 ? `<span class="badge">${g.count}</span>` : '') + '</div>',
+            iconSize: [44, 44],
+            iconAnchor: [22, 22]
+          });
+          m = L.marker([g.lat, g.lng], { icon }).addTo(map);
+          m.bindPopup('');
+          markers.set(g.key, m);
+          setTimeout(() => {
+            const el = m.getElement() && m.getElement().querySelector('.geo-marker');
+            if (el) el.classList.remove('pop');
+          }, 700);
+        }
+        const el = m.getElement() && m.getElement().querySelector('.geo-marker');
+        if (el) el.classList.toggle('live', isLive);
+        m.setPopupContent(markerPopup(g, now));
+      });
+      // remove locais que saíram da janela de 24h
+      for (const [key, m] of markers) {
+        if (!seen.has(key)) { m.remove(); markers.delete(key); }
+      }
+      fitMapOnce();
+    }
+
+    /* ---------- Feed ---------- */
+    const CTA_NAMES = {
+      'hero': 'do hero', 'hero-como-funciona': '“ver como funciona”',
+      'navbar': 'da navbar', 'navbar-mobile': 'da navbar (mobile)',
+      'cta-final': 'final', 'whatsapp-final': 'do WhatsApp', 'footer': 'do rodapé'
+    };
+    function phrase(ev) {
+      switch (ev.type) {
+        case 'pageview': return 'acessou a página';
+        case 'cta_click': return `clicou no CTA ${CTA_NAMES[ev.label] || '“' + esc(ev.label || '?') + '”'}`;
+        case 'form_open': return 'abriu o formulário';
+        case 'step_reached': return `chegou ao passo ${esc(ev.label || '?')} do formulário`;
+        case 'form_complete': return 'completou o formulário 🎉';
+        default: return esc(ev.type);
+      }
+    }
+    const ICONS = { pageview: '👁', cta_click: '⚡', form_open: '📝', step_reached: '➜', form_complete: '🏆' };
+    function rel(ts, now) {
+      const s = Math.max(0, Math.round((now - ts) / 1000));
+      if (s < 30) return 'agora';
+      if (s < 60) return `há ${s}s`;
+      const m = Math.round(s / 60);
+      if (m < 60) return `há ${m} min`;
+      const h = Math.round(m / 60);
+      return h < 24 ? `há ${h}h` : `há ${Math.round(h / 24)}d`;
+    }
+    function renderFeed(feed, now) {
+      const box = $('feed');
+      if (!feed.length) return;
+      const maxId = feed[0].id;
+      box.innerHTML = feed.map(ev => `
+        <div class="feed-item ${ev.id > lastFeedId ? 'fresh' : ''}">
+          <div class="feed-ico">${ICONS[ev.type] || '·'}</div>
+          <div>Visitante de <b>${esc(ev.city || 'origem desconhecida')}</b> ${phrase(ev)}</div>
+          <span class="feed-time">${rel(ev.ts, now)}</span>
+        </div>`).join('');
+      lastFeedId = Math.max(lastFeedId, maxId);
+    }
+
+    /* ---------- Gráfico de linha (SVG, sem libs) ---------- */
+    const NS = 'http://www.w3.org/2000/svg';
+    let chartData = [];
+    function renderChart(hourly) {
+      const json = JSON.stringify(hourly);
+      const tooltipOpen = $('chartTip').style.display === 'block';
+      if (json === lastHourlyJson && !tooltipOpen) return; // evita flicker sem mudança
+      if (json !== lastHourlyJson) {
+        lastHourlyJson = json;
+        chartData = hourly;
+        drawChart();
+      }
+    }
+    function drawChart() {
+      const box = $('chartBox');
+      box.querySelectorAll('svg').forEach(s => s.remove());
+      const W = 640, H = 230, padL = 34, padR = 12, padT = 14, padB = 26;
+      const iw = W - padL - padR, ih = H - padT - padB;
+      const max = Math.max(4, ...chartData.map(d => d.count));
+      const X = i => padL + (i / (chartData.length - 1)) * iw;
+      const Y = v => padT + ih - (v / max) * ih;
+
+      let grid = '', xlab = '';
+      for (let g = 0; g <= 2; g++) {
+        const v = Math.round(max * g / 2), y = Y(v);
+        grid += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#232323" stroke-width="1"/>
+                 <text x="${padL - 7}" y="${y + 3.5}" text-anchor="end" font-size="10" fill="#6E6E68">${v}</text>`;
+      }
+      chartData.forEach((d, i) => {
+        if (i % 4 === 0) {
+          xlab += `<text x="${X(i)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="#6E6E68">${new Date(d.ts).getHours()}h</text>`;
+        }
+      });
+      const line = chartData.map((d, i) => (i ? 'L' : 'M') + X(i).toFixed(1) + ',' + Y(d.count).toFixed(1)).join('');
+      const area = line + `L${X(chartData.length - 1)},${Y(0)}L${X(0)},${Y(0)}Z`;
+
+      const svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      svg.setAttribute('preserveAspectRatio', 'none');
+      svg.innerHTML = `
+        <defs>
+          <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#FF5C1A" stop-opacity=".28"/>
+            <stop offset="100%" stop-color="#FF5C1A" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        ${grid}${xlab}
+        <path d="${area}" fill="url(#areaFill)"/>
+        <path d="${line}" fill="none" stroke="#FF5C1A" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+        <line id="xhair" y1="${padT}" y2="${padT + ih}" stroke="#444" stroke-width="1" stroke-dasharray="3 3" style="display:none"/>
+        <circle id="hoverPt" r="4.5" fill="#FF5C1A" stroke="#0D0D0D" stroke-width="2" style="display:none"/>
+        <rect x="${padL}" y="${padT}" width="${iw}" height="${ih}" fill="transparent" id="hoverZone"/>`;
+      box.appendChild(svg);
+
+      const tip = $('chartTip'), xh = svg.querySelector('#xhair'), pt = svg.querySelector('#hoverPt');
+      const zone = svg.querySelector('#hoverZone');
+      zone.addEventListener('mousemove', e => {
+        const r = svg.getBoundingClientRect();
+        const mx = (e.clientX - r.left) * (W / r.width);
+        const i = Math.max(0, Math.min(chartData.length - 1, Math.round(((mx - padL) / iw) * (chartData.length - 1))));
+        const d = chartData[i], x = X(i), y = Y(d.count);
+        xh.setAttribute('x1', x); xh.setAttribute('x2', x); xh.style.display = '';
+        pt.setAttribute('cx', x); pt.setAttribute('cy', y); pt.style.display = '';
+        tip.style.display = 'block';
+        tip.style.left = (x / W * 100) + '%';
+        tip.style.top = (y / H * 100) + '%';
+        const hh = new Date(d.ts).getHours();
+        tip.innerHTML = `${hh}h às ${(hh + 1) % 24}h · <b>${d.count}</b> visitante${d.count === 1 ? '' : 's'}`;
+      });
+      zone.addEventListener('mouseleave', () => {
+        tip.style.display = 'none'; xh.style.display = 'none'; pt.style.display = 'none';
+      });
+    }
+
+    /* ---------- Funil ---------- */
+    function renderFunnel(f) {
+      const rows = [
+        ['Abriu o formulário', f.opened],
+        ['Passo 1 · Nome', f.steps[0]],
+        ['Passo 2 · Provedor', f.steps[1]],
+        ['Passo 3 · WhatsApp', f.steps[2]],
+        ['Passo 4 · Cidade', f.steps[3]],
+        ['Passo 5 · Momento', f.steps[4]],
+        ['Form completo', f.completed]
+      ];
+      const max = Math.max(1, ...rows.map(r => r[1]));
+      $('funnel').innerHTML = rows.map(([label, v]) => {
+        const pctW = Math.round(100 * v / max);
+        const pctOf = f.opened ? Math.round(100 * v / f.opened) : 0;
+        return `<div class="f-row">
+          <span class="f-label">${label}</span>
+          <div class="f-track"><div class="f-bar" style="width:${pctW}%"></div></div>
+          <span class="f-val">${v} <small>· ${pctOf}%</small></span>
+        </div>`;
+      }).join('');
+    }
+
+    /* ---------- Leads ---------- */
+    function renderLeads(leads) {
+      leadsCache = leads;
+      $('leadCount').textContent = leads.length ? `${leads.length} no total` : '';
+      if (!leads.length) return;
+      $('leadsBody').innerHTML = leads.map(l => {
+        const digits = (l.whatsapp || '').replace(/\D/g, '');
+        const dt = new Date(l.ts);
+        const dstr = dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        return `<tr>
+          <td class="strong">${esc(l.nome)}</td>
+          <td>${esc(l.provedor)}</td>
+          <td>${esc(l.whatsapp)}</td>
+          <td>${esc(l.cidade)}</td>
+          <td><span class="momento-tag">${esc(l.momento || 'sem resposta')}</span></td>
+          <td>${dstr}</td>
+          <td><a class="wa-btn" href="https://wa.me/55${digits}" target="_blank" rel="noopener">WhatsApp ↗</a></td>
+        </tr>`;
+      }).join('');
+    }
+    function esc(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    $('csvBtn').addEventListener('click', () => {
+      const head = ['Nome', 'Provedor', 'WhatsApp', 'Cidade', 'Momento', 'Data'];
+      const lines = leadsCache.map(l => [
+        l.nome, l.provedor, l.whatsapp, l.cidade, l.momento,
+        new Date(l.ts).toLocaleString('pt-BR')
+      ].map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(';'));
+      const csv = '﻿' + head.join(';') + '\n' + lines.join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      a.download = 'corexia-leads.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+
+    /* ---------- Boot ---------- */
+    if (TOKEN) showDash(); else showLogin();
+  </script>
+</body>
+</html>

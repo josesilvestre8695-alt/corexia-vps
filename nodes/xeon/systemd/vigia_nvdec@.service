@@ -8,7 +8,7 @@ User=corexia
 WorkingDirectory=/home/corexia/corexia-ia
 EnvironmentFile=/home/corexia/corexia-ia/.env
 Environment=PYTHONUNBUFFERED=1
-Environment=CUDA_VISIBLE_DEVICES=
+Environment=CUDA_VISIBLE_DEVICES=%i
 Environment=WORKER_GPU=%i
 Environment=WORKER_ID=%i
 Environment=WORKER_COUNT=2

@@ -1470,13 +1470,16 @@ async def webhook(req: Request):
     if verificado and cam.get("migracao_status") != "pendente_analitico":
         emoji = TIPO_EMOJI.get(tipo, "🔔"); label = TIPO_LABEL.get(tipo, "ALERTA DE SEGURANCA")
         agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+        _camlink = (cam.get('embed_url', '') or '')
+        if _camlink and not _camlink.startswith('http'):
+            _camlink = 'https://www.grupocorexia.com.br' + (_camlink if _camlink.startswith('/') else '/' + _camlink)
         caption = (f"{emoji} *COREXIA SEGURANCA - {label}*\n\n"
                    f"👤 *Cliente:* {cliente_nome or 'N/A'}\n"
                    f"📷 *Camera:* {b.get('camera_nome', '')}\n"
                    f"🎯 *Confianca da IA:* {int(b.get('confianca', 0) or 0)}%\n"
                    f"🕐 *Horario:* {agora}\n"
                    + (f"📝 *Descricao:* {b.get('descricao', '')}\n" if b.get('descricao') else "")
-                   + (f"\n📹 *Ver a camera ao vivo:*\n{cam.get('embed_url','')}\n" if cam.get('embed_url') else "")
+                   + (f"\n📹 *Ver a camera ao vivo:*\n{_camlink}\n" if _camlink else "")
                    + "\n_Sistema Corexia de vigilancia._")
         # 1) CLIENTE final: so se a camera tem cliente c/ telefone E a PreferenciaAlerta permite
         if tel and cliente_id and _pref_notifica(cliente_id, tipo):
@@ -3216,16 +3219,21 @@ html,body{height:100%;background:#000;overflow:hidden}
 var KEY="__KEY__", SRC="__SRC__";
 var v=document.getElementById("v"), wrap=document.getElementById("wrap"), zlbl=document.getElementById("zlbl");
 /* ---- HLS com auto-reconexao ---- */
+function tryplay(){ try{ var p=v.play(); if(p&&p.catch)p.catch(function(){}); }catch(e){} }
 function start(){
  try{
-  if(window.Hls && Hls.isSupported()){
+  if(v.canPlayType("application/vnd.apple.mpegurl")){ v.src=SRC; }
+  else if(window.Hls && Hls.isSupported()){
    var h=new Hls({liveSyncDurationCount:2,maxBufferLength:8,manifestLoadingMaxRetry:8});
    h.loadSource(SRC); h.attachMedia(v);
    h.on(Hls.Events.ERROR,function(_e,d){ if(d&&d.fatal){ try{h.destroy()}catch(x){} setTimeout(start,2500);} });
-  } else { v.src=SRC; } /* Safari/iOS nativo */
+  } else { v.src=SRC; }
  }catch(e){ setTimeout(start,2500); }
- var p=v.play(); if(p&&p.catch)p.catch(function(){});
+ tryplay();
 }
+v.addEventListener("loadedmetadata",tryplay);
+v.addEventListener("canplay",tryplay);
+document.addEventListener("click",function(){ if(v.paused)tryplay(); });
 start();
 /* ---- ZOOM / PAN ---- */
 var scale=1,tx=0,ty=0,MIN=1,MAX=6;
@@ -3256,7 +3264,7 @@ wrap.addEventListener("touchmove",function(e){ e.preventDefault(); var ids=Objec
 wrap.addEventListener("touchend",function(e){ for(var i=0;i<e.changedTouches.length;i++){delete P[e.changedTouches[i].identifier];} pd=0; },{passive:false});
 /* som + tela cheia */
 document.getElementById("mut").onclick=function(){ v.muted=!v.muted; this.innerHTML=v.muted?"&#128264;":"&#128266;"; if(!v.muted){var p=v.play();if(p&&p.catch)p.catch(function(){});} };
-document.getElementById("fs").onclick=function(){ try{ if(document.fullscreenElement)document.exitFullscreen(); else (wrap.requestFullscreen||wrap.webkitRequestFullscreen).call(wrap);}catch(e){} };
+document.getElementById("fs").onclick=function(){ try{ if(document.fullscreenElement){document.exitFullscreen();return;} if(wrap.requestFullscreen){wrap.requestFullscreen();return;} if(wrap.webkitRequestFullscreen){wrap.webkitRequestFullscreen();return;} if(v.webkitEnterFullscreen){v.webkitEnterFullscreen();return;} if(v.requestFullscreen){v.requestFullscreen();} }catch(e){} };
 window.addEventListener("resize",function(){ clamp();upd(); });
 </script></body></html>"""
 
@@ -3362,31 +3370,60 @@ _PORTAL_MENU_JS = r"""<script>/* corexia-portal-menu */(function(){
  var BUSCA_ICON='<circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>';
  function goMos(e){ if(e){e.preventDefault();e.stopPropagation();} window.location.href='/meus-mosaicos?t='+encodeURIComponent(t); }
  function goBusca(e){ if(e){e.preventDefault();e.stopPropagation();} window.location.assign('/portal/busca'); }
+ function goFat(e){ if(e){e.preventDefault();e.stopPropagation();} window.location.assign('/portal/faturas'); }
  function killFab(id){ var x=document.getElementById(id); if(x&&x.parentNode)x.parentNode.removeChild(x); }
- function fab(id,txt,side,onclick){ if(document.getElementById(id))return; var b=document.createElement('button'); b.id=id; b.type='button'; b.textContent=txt;
-   b.style.cssText='position:fixed;'+side+':16px;bottom:16px;z-index:99999;background:#f97316;color:#111;font-weight:700;font-family:system-ui,sans-serif;font-size:14px;padding:10px 16px;border:0;border-radius:24px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.3)';
+ function fab(id,txt,onclick,bottom){ if(document.getElementById(id))return; var b=document.createElement('button'); b.id=id; b.type='button'; b.textContent=txt;
+   b.style.cssText='position:fixed;right:14px;bottom:'+(bottom||16)+'px;z-index:99999;background:#f97316;color:#111;font-weight:700;font-family:system-ui,sans-serif;font-size:14px;padding:11px 16px;border:0;border-radius:24px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.35)';
    b.addEventListener('click',onclick); document.body.appendChild(b); }
+ function isMobile(){ return (window.innerWidth||999) <= 860; }
+ function killItems(){ ['cx-mos-item','cx-busca-item'].forEach(function(id){ var e=document.getElementById(id); if(e&&e.parentNode)e.parentNode.removeChild(e); }); }
+ function mkbtn(txt,onclick,primary){ var b=document.createElement('button'); b.type='button'; b.textContent=txt;
+   b.style.cssText='display:block;white-space:nowrap;font-weight:700;font-family:system-ui,sans-serif;font-size:14px;padding:11px 18px;border-radius:24px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.30);'+(primary?'background:#f97316;color:#111;border:0':'background:#fff7ed;color:#7c2d12;border:1px solid #fdba74');
+   b.addEventListener('click',onclick); return b; }
+ function mobileMenu(){
+   if(document.getElementById('cx-menu-wrap'))return;
+   var open=false;
+   var wrap=document.createElement('div'); wrap.id='cx-menu-wrap';
+   wrap.style.cssText='position:fixed;right:14px;bottom:94px;z-index:99999;display:flex;flex-direction:column;align-items:flex-end;gap:10px';
+   var panel=document.createElement('div'); panel.id='cx-menu-panel';
+   panel.style.cssText='display:none;flex-direction:column;align-items:flex-end;gap:8px';
+   function render(){ panel.style.display=open?'flex':'none'; }
+   function close(){ open=false; render(); }
+   function toggle(){ open=!open; render(); }
+   function nav(fn){ return function(e){ if(e){e.preventDefault();e.stopPropagation();} close(); fn(e); }; }
+   if(IS_CLI) panel.appendChild(mkbtn('💳 Faturas',nav(goFat),false));
+   if(IS_CLI) panel.appendChild(mkbtn('▦ Mosaico',nav(goMos),false));
+   panel.appendChild(mkbtn('🔍 Pergunte',nav(goBusca),false));
+   var tog=mkbtn('☰ Menu',function(e){ if(e){e.preventDefault();e.stopPropagation();} toggle(); },true); tog.id='cx-menu-toggle';
+   wrap.appendChild(panel); wrap.appendChild(tog);
+   document.body.appendChild(wrap);
+   document.addEventListener('click',function(ev){ if(open && !wrap.contains(ev.target)) close(); });
+ }
  function ensure(){
-   if(!onPortal())return;
+   if(!onPortal()){ killFab('cx-mos-fab'); killFab('cx-busca-fab'); killFab('cx-fat-fab'); killFab('cx-menu-wrap'); killItems(); return; }
+   if(isMobile()){
+     killItems(); killFab('cx-mos-fab'); killFab('cx-busca-fab'); killFab('cx-fat-fab');
+     mobileMenu();
+     return;
+   }
+   killFab('cx-mos-fab'); killFab('cx-busca-fab'); killFab('cx-fat-fab'); killFab('cx-menu-wrap');
    var anchor=findByText(['ajuste']);
-   if(anchor&&anchor.parentNode){
-     killFab('cx-mos-btn'); killFab('cx-busca-fab');
-     if(IS_CLI && !document.getElementById('cx-mos-item')){
-       var m=mkItem('cx-mos-item',anchor,'Meu Mosaico',MOS_ICON,goMos);
-       anchor.parentNode.insertBefore(m, anchor.nextSibling);
-     }
-     var busAnchor=document.getElementById('cx-mos-item')||anchor;
-     if(!document.getElementById('cx-busca-item')){
-       var b=mkItem('cx-busca-item',busAnchor,'Pergunte ao Corexia',BUSCA_ICON,goBusca);
-       busAnchor.parentNode.insertBefore(b, busAnchor.nextSibling);
-     }
-   } else {
-     if(IS_CLI) fab('cx-mos-btn','Meu Mosaico','left',goMos);
-     fab('cx-busca-fab','Pergunte ao Corexia','right',goBusca);
+   if(!anchor||!anchor.parentNode){
+     if(IS_CLI) fab('cx-mos-fab','Mosaico',goMos,78);
+     fab('cx-busca-fab','Pergunte ao Corexia',goBusca,20); return;
+   }
+   if(IS_CLI && !document.getElementById('cx-mos-item')){
+     var m=mkItem('cx-mos-item',anchor,'Meu Mosaico',MOS_ICON,goMos);
+     anchor.parentNode.insertBefore(m, anchor.nextSibling);
+   }
+   var busAnchor=document.getElementById('cx-mos-item')||anchor;
+   if(!document.getElementById('cx-busca-item')){
+     var b=mkItem('cx-busca-item',busAnchor,'Pergunte ao Corexia',BUSCA_ICON,goBusca);
+     busAnchor.parentNode.insertBefore(b, busAnchor.nextSibling);
    }
  }
  var pend=false; function sched(){ if(pend)return; pend=true; setTimeout(function(){pend=false; ensure();},140); }
- function start(){ ensure(); try{ new MutationObserver(sched).observe(document.body||document.documentElement,{childList:true,subtree:true}); }catch(e){} window.addEventListener('popstate',sched); }
+ function start(){ ensure(); try{ new MutationObserver(sched).observe(document.body||document.documentElement,{childList:true,subtree:true}); }catch(e){} window.addEventListener('popstate',sched); window.addEventListener('resize',sched); }
  fetch('/api/auth/me',{headers:{'Authorization':'Bearer '+t}}).then(function(r){return r.json();}).then(function(u){ IS_CLI=(u&&u.role==='cliente'); start(); }).catch(function(){ start(); });
 })();</script>"""
 
@@ -3737,7 +3774,23 @@ if os.path.isdir(os.path.join(WEB, "brand")):
     app.mount("/brand", StaticFiles(directory=os.path.join(WEB, "brand")), name="brand")
 
 @app.get("/manifest.json")
-def manifest():
+def manifest(request: Request):
+    try:
+        _b = _wl_brand(request.headers.get("host", ""))
+    except Exception:
+        _b = None
+    if _b and _b.get("nome_marca"):
+        _nm = _b["nome_marca"]
+        _th = _b.get("cor_menu") or _b.get("cor") or "#0f1115"
+        _m = {"id": "/", "name": _nm, "short_name": (_nm or "App")[:12],
+              "description": "Suas cameras e alertas na palma da mao.",
+              "lang": "pt-BR", "start_url": "/", "scope": "/", "display": "standalone",
+              "display_override": ["standalone", "minimal-ui"], "orientation": "portrait-primary",
+              "background_color": "#0f1115", "theme_color": _th,
+              "icons": [{"src": "/pwa-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+                        {"src": "/pwa-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+                        {"src": "/pwa-icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}]}
+        return JSONResponse(_m, media_type="application/manifest+json", headers={"Cache-Control": "no-cache"})
     p = os.path.join(WEB, "manifest.json")
     return FileResponse(p, media_type="application/manifest+json") if os.path.exists(p) else JSONResponse({}, status_code=404)
 
@@ -3746,6 +3799,77 @@ def sw():
     p = os.path.join(WEB, "sw.js")
     return FileResponse(p, media_type="application/javascript",
                         headers={"Cache-Control": "no-cache"}) if os.path.exists(p) else JSONResponse({}, status_code=404)
+
+# ---- PWA white-label: icones compostos por provedor (resolvem por Host) ----
+_PWA_ICON_CACHE = os.path.join(WEB, "brand", "pwa_cache")
+
+def _hex_rgb(hx):
+    hx = (hx or "").strip().lstrip("#")
+    if len(hx) == 3:
+        hx = "".join(c * 2 for c in hx)
+    if len(hx) != 6:
+        return (15, 17, 21)
+    try:
+        return (int(hx[0:2], 16), int(hx[2:4], 16), int(hx[4:6], 16))
+    except Exception:
+        return (15, 17, 21)
+
+def _pwa_default_icon(size):
+    fn = "icon-512.png" if size >= 512 else "icon-192.png"
+    p = os.path.join(WEB, fn)
+    return p if os.path.exists(p) else None
+
+def _pwa_icon_for_host(host, size, maskable=False):
+    try:
+        b = _wl_brand(host)
+    except Exception:
+        b = None
+    if not b or not b.get("logo"):
+        return _pwa_default_icon(size)
+    logo_path = os.path.join(WEB, b["logo"].lstrip("/"))
+    if not os.path.exists(logo_path):
+        return _pwa_default_icon(size)
+    try:
+        os.makedirs(_PWA_ICON_CACHE, exist_ok=True)
+        cache = os.path.join(_PWA_ICON_CACHE, "%s-%d-%s.png" % (b.get("pid", "x"), size, "m" if maskable else "n"))
+        if os.path.exists(cache) and os.path.getmtime(cache) >= os.path.getmtime(logo_path):
+            return cache
+        from PIL import Image
+        try:
+            _RES = Image.Resampling.LANCZOS
+        except Exception:
+            _RES = Image.LANCZOS
+        canvas = Image.new("RGBA", (size, size), _hex_rgb(b.get("cor_menu") or "#0f1115") + (255,))
+        logo = Image.open(logo_path).convert("RGBA")
+        pad = int(size * (0.22 if maskable else 0.14))
+        box = max(1, size - 2 * pad)
+        lw, lh = logo.size
+        sc = min(box / float(lw), box / float(lh))
+        nw, nh = max(1, int(lw * sc)), max(1, int(lh * sc))
+        logo = logo.resize((nw, nh), _RES)
+        canvas.alpha_composite(logo, ((size - nw) // 2, (size - nh) // 2))
+        canvas.convert("RGB").save(cache, "PNG")
+        return cache
+    except Exception as _e:
+        print("[pwa-icon] falha:", _e)
+        return _pwa_default_icon(size)
+
+@app.get("/pwa-icon-{spec}")
+def pwa_icon(spec: str, request: Request):
+    s = spec[:-4] if spec.lower().endswith(".png") else spec
+    maskable = s.endswith("-maskable")
+    if maskable:
+        s = s[:-len("-maskable")]
+    try:
+        size = int(s)
+    except Exception:
+        size = 192
+    if size not in (180, 192, 512):
+        size = 192
+    p = _pwa_icon_for_host(request.headers.get("host", ""), size, maskable)
+    if p and os.path.exists(p):
+        return FileResponse(p, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
+    return JSONResponse({}, status_code=404)
 
 # === LP Corexia + analytics (rotas /lp, /lp/admin, /api/lp/*) ===
 try:
@@ -3763,6 +3887,7 @@ except Exception as _lp_err:
 _COM_BRIDGE = ""   # ponte injetada no index.html do SPA (itens comerciais do menu -> /comercial/*)
 _WL_JS = ""
 def _wl_style(_h): return ""
+def _wl_brand(_h): return None
 try:
     from comercial import (router as _com_router, COMERCIAL_BRIDGE_JS as _COM_BRIDGE,
                            WHITE_LABEL_JS as _WL_JS, wl_style_for_host as _wl_style)
@@ -3777,6 +3902,10 @@ try:
         print("[proposta_lp] falha ao carregar:", _plp_err)
     app.include_router(_com_router)
     print("[comercial] rotas /comercial e /api/comercial/* ativas")
+    try:
+        from comercial import wl_brand_for_host as _wl_brand
+    except Exception:
+        pass
 except Exception as _com_err:
     print("[comercial] falha ao carregar:", _com_err)
 
@@ -3915,6 +4044,77 @@ def camlive(cid: str, fname: str, req: Request):
     return JSONResponse({"error": "segmento"}, status_code=404)
 
 
+_PERF_JS = r"""<script>/* corexia-perf */
+(function(){
+  if(window.__cxPerf)return; window.__cxPerf=true;
+  var Native=window.MutationObserver; if(!Native)return;
+  var scrolling=false,t=null,deferred=[];
+  function settle(){ scrolling=false; var d=deferred; deferred=[]; for(var i=0;i<d.length;i++){ try{d[i]();}catch(e){} } }
+  function onScroll(){ scrolling=true; if(t)clearTimeout(t); t=setTimeout(settle,200); }
+  try{ window.addEventListener('scroll',onScroll,{passive:true,capture:true}); window.addEventListener('touchmove',onScroll,{passive:true,capture:true}); }catch(e){}
+  function W(cb){ var self=this; self._pend=false;
+    self._i=new Native(function(recs,o){
+      if(scrolling && self._wide){ if(!self._pend){ self._pend=true; deferred.push(function(){ self._pend=false; try{cb([],self);}catch(e){} }); } return; }
+      cb(recs,o);
+    });
+  }
+  W.prototype.observe=function(target,opts){ try{ this._wide=!!(opts&&opts.subtree)&&(target===document.body||target===document.documentElement); }catch(e){ this._wide=false; } return this._i.observe(target,opts); };
+  W.prototype.disconnect=function(){ return this._i.disconnect(); };
+  W.prototype.takeRecords=function(){ return this._i.takeRecords(); };
+  window.MutationObserver=W;
+})();</script>"""
+
+_PORTAL_PWA_JS = r"""<script>/* corexia-pwa */
+(function(){
+  if(window.__cxPwa)return; window.__cxPwa=true;
+  if('serviceWorker' in navigator){ window.addEventListener('load',function(){ navigator.serviceWorker.register('/sw.js',{scope:'/'}).catch(function(){}); }); }
+  var mm=window.matchMedia;
+  var standalone=(mm && mm('(display-mode: standalone)').matches) || (navigator.standalone===true);
+  if(standalone) return;
+  var ua=navigator.userAgent||'';
+  var isIOS=/iphone|ipad|ipod/i.test(ua) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+  var isMobile=isIOS || /android/i.test(ua) || (mm && mm('(max-width: 860px)').matches);
+  if(!isMobile) return;
+  try{ var dz=parseInt(localStorage.getItem('cx_pwa_dismiss')||'0',10); if(dz && (Date.now()-dz) < 7*24*3600*1000) return; }catch(e){}
+  var deferred=null;
+  var BRAND=(window.__WL__&&window.__WL__.nome)?String(window.__WL__.nome):'Corexia';
+  var SHARE='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b9dff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><path d="M12 15V3"></path><path d="M8 7l4-4 4 4"></path><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"></path></svg>';
+  var PLUSB='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b9dff" stroke-width="2" stroke-linecap="round" style="vertical-align:-3px"><rect x="3" y="3" width="18" height="18" rx="4"></rect><path d="M12 8v8M8 12h8"></path></svg>';
+  function el(t,c,x){ var e=document.createElement(t); if(c)e.style.cssText=c; if(x!=null)e.textContent=x; return e; }
+  function save(ms){ try{ localStorage.setItem('cx_pwa_dismiss',String(ms)); }catch(e){} }
+  function hide(){ var b=document.getElementById('cx-pwa'); if(b&&b.parentNode)b.parentNode.removeChild(b); }
+  function dismiss(){ save(Date.now()); hide(); }
+  window.addEventListener('appinstalled',function(){ save(Date.now()+3650*24*3600*1000); hide(); });
+  window.addEventListener('beforeinstallprompt',function(e){ e.preventDefault(); deferred=e; show('android'); });
+  function show(kind){
+    if(document.getElementById('cx-pwa'))return;
+    if(!document.body){ setTimeout(function(){show(kind);},400); return; }
+    if(!document.getElementById('cx-pwa-css')){ var s=el('style'); s.id='cx-pwa-css'; s.textContent='@keyframes cxpwaup{from{transform:translateY(-16px);opacity:0}to{transform:translateY(0);opacity:1}}'; (document.head||document.documentElement).appendChild(s); }
+    var wrap=el('div','position:fixed;top:0;left:0;right:0;z-index:2147483000;display:flex;justify-content:center;padding:10px 12px;padding-top:calc(env(safe-area-inset-top, 0px) + 10px);box-sizing:border-box;pointer-events:none;font-family:system-ui,-apple-system,sans-serif'); wrap.id='cx-pwa';
+    var card=el('div','pointer-events:auto;width:100%;max-width:440px;max-height:82vh;overflow-y:auto;-webkit-overflow-scrolling:touch;background:#12151b;color:#f2f4f6;border:1px solid #262d38;border-radius:16px;box-shadow:0 16px 50px rgba(0,0,0,.55);padding:16px 16px 14px;position:relative;animation:cxpwaup .26s ease');
+    var x=el('button','position:absolute;top:6px;right:10px;background:none;border:0;color:#8b96a6;font-size:23px;line-height:1;cursor:pointer','×'); x.setAttribute('aria-label','Fechar'); x.onclick=dismiss;
+    var rowc=el('div','display:flex;align-items:center;gap:12px;padding-right:16px');
+    var ic=el('img','width:54px;height:54px;border-radius:13px;flex:none;background:#0a0a0a'); ic.src='/pwa-icon-192.png'; ic.alt=BRAND;
+    var tc=el('div','min-width:0;flex:1');
+    tc.appendChild(el('div','font-weight:700;font-size:15.5px','Instale o app '+BRAND));
+    tc.appendChild(el('div','color:#9aa4b2;font-size:12.5px;margin-top:2px','Suas câmeras e alertas na tela inicial, com abertura rápida.'));
+    rowc.appendChild(ic); rowc.appendChild(tc); card.appendChild(x); card.appendChild(rowc);
+    if(kind==='android'){
+      var b1=el('button','margin-top:14px;width:100%;background:#f97316;color:#111;font-weight:700;font-size:15px;border:0;border-radius:12px;padding:12px;cursor:pointer','Instalar aplicativo');
+      b1.onclick=function(){ if(!deferred){ dismiss(); return; } deferred.prompt(); deferred.userChoice.then(function(){ deferred=null; hide(); }); };
+      var b2=el('button','margin-top:8px;width:100%;background:none;color:#8b96a6;font-size:13px;border:0;cursor:pointer','Agora não'); b2.onclick=dismiss;
+      card.appendChild(b1); card.appendChild(b2);
+    } else {
+      var st=el('div','margin-top:13px;background:#0e1116;border:1px solid #232a34;border-radius:12px;padding:12px;font-size:13.5px;line-height:1.6;color:#cdd5df');
+      st.innerHTML='Para instalar no iPhone/iPad:<br>1) Toque em <b>Compartilhar</b> '+SHARE+' na barra do Safari.<br>2) Escolha <b>Adicionar à Tela de Início</b> '+PLUSB+'.';
+      var ok=el('button','margin-top:12px;width:100%;background:#f97316;color:#111;font-weight:700;font-size:15px;border:0;border-radius:12px;padding:11px;cursor:pointer','Entendi'); ok.onclick=dismiss;
+      card.appendChild(st); card.appendChild(ok);
+    }
+    wrap.appendChild(card); document.body.appendChild(wrap);
+  }
+  if(isIOS){ setTimeout(function(){ show('ios'); }, 1600); }
+})();</script>"""
+
 @app.get("/{full_path:path}")
 def spa(full_path: str, request: Request):
     # arquivos estaticos da raiz do build (favicon, icones pwa) — com containment robusto
@@ -3939,6 +4139,8 @@ def spa(full_path: str, request: Request):
                 print("[wl] head:", _we)
             # injeta ponte comercial + white-label client no <body> (index.html em disco intacto)
             _inj = ""
+            if "corexia-perf" not in _html:
+                _inj += _PERF_JS
             if _COM_BRIDGE and "corexia-bridge" not in _html:
                 _inj += _COM_BRIDGE
             if _WL_JS and "corexia-wl" not in _html:
@@ -3954,6 +4156,8 @@ def spa(full_path: str, request: Request):
                 _inj += _PORTAL_CLIP_JS
             if "corexia-portal-faturas" not in _html:
                 _inj += _PORTAL_FATURAS_JS
+            if "corexia-pwa" not in _html:
+                _inj += _PORTAL_PWA_JS
             # (busca FAB e meu-mosaico agora sao itens de menu via _PORTAL_MENU_JS)
             if "corexia-net" not in _html:
                 _inj += _NET_WIDGET_JS

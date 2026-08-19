@@ -1,0 +1,1835 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Corexia | Monitoramento inteligente com IA para provedores de internet</title>
+  <meta name="description" content="Totens com câmeras, IA de detecção em tempo real e painel white-label para o seu provedor revender segurança como serviço. Nova receita recorrente, mais retenção. Agende uma demonstração.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Corexia: transforme seu provedor na referência de segurança da cidade">
+  <meta property="og:description" content="IA de detecção (arma de fogo, arma branca, fumaça, fogo e movimento), alertas em tempo real e painel próprio. Seu provedor revende segurança e fatura receita recorrente.">
+  <meta property="og:image" content="/lp-assets/mockup-app.png">
+  <meta property="og:locale" content="pt_BR">
+  <link rel="icon" type="image/png" href="/lp-assets/logo-icon.png">
+  <link rel="preload" as="image" href="/lp-assets/bg-hero.jpg" fetchpriority="high">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#0D0D0D;
+      --bg-soft:#141414;
+      --card:#1A1A1A;
+      --card-border:#2A2A2A;
+      --accent:#FF5C1A;
+      --accent-soft:rgba(255,92,26,.12);
+      --accent-glow:rgba(255,92,26,.35);
+      --text:#F5F5F3;
+      --text-dim:#A6A6A0;
+      --light-bg:#FFFFFF;
+      --light-card:#F7F6F4;
+      --light-border:#E7E4E0;
+      --light-text:#141414;
+      --light-dim:#5C5B57;
+      --radius:16px;
+      --nav-h:76px;
+    }
+    *{margin:0;padding:0;box-sizing:border-box}
+    html{scroll-behavior:smooth}
+    body{
+      font-family:'Inter',system-ui,-apple-system,sans-serif;
+      background:var(--bg);
+      color:var(--text);
+      line-height:1.6;
+      -webkit-font-smoothing:antialiased;
+      overflow-x:hidden;
+    }
+    img{max-width:100%;display:block}
+    a{color:inherit;text-decoration:none}
+    section{scroll-margin-top:calc(var(--nav-h) + 12px)}
+    .container{width:min(1260px,92%);margin:0 auto}
+    .eyebrow{
+      display:inline-flex;align-items:center;gap:8px;
+      font-size:.78rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+      color:var(--accent);margin-bottom:16px;
+    }
+    .eyebrow::before{content:"";width:22px;height:2px;background:var(--accent);border-radius:2px}
+    h1,h2,h3{line-height:1.15;font-weight:800;letter-spacing:-.02em}
+    h2{font-size:clamp(1.7rem,3.6vw,2.5rem);margin-bottom:14px}
+    .section-sub{color:var(--text-dim);max-width:640px;font-size:1.05rem}
+    .light .section-sub{color:var(--light-dim)}
+    .section-head{margin-bottom:52px}
+    .center{text-align:center}
+    .center .section-sub{margin:0 auto}
+
+    /* ===== Buttons ===== */
+    .btn{
+      display:inline-flex;align-items:center;justify-content:center;gap:10px;
+      font-family:inherit;font-weight:700;font-size:1rem;
+      padding:15px 30px;border-radius:12px;border:none;cursor:pointer;
+      transition:transform .2s,box-shadow .2s,background .2s,border-color .2s;
+      white-space:nowrap;
+    }
+    .btn-primary{
+      background:linear-gradient(135deg,#FF7A33,var(--accent));
+      color:#fff;box-shadow:0 8px 28px -8px var(--accent-glow);
+    }
+    .btn-primary:hover{transform:translateY(-2px);box-shadow:0 14px 36px -8px var(--accent-glow)}
+    .btn-ghost{
+      background:transparent;color:var(--text);
+      border:1px solid #3A3A3A;
+    }
+    .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+    .light .btn-ghost{color:var(--light-text);border-color:#CFCBC5}
+    .light .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+    .btn-lg{padding:18px 40px;font-size:1.08rem;border-radius:14px}
+
+    /* ===== Navbar (pílula flutuante) ===== */
+    .nav{
+      position:fixed;top:0;left:0;right:0;z-index:90;
+      padding-top:14px;pointer-events:none;
+    }
+    .nav-inner{
+      pointer-events:auto;position:relative;
+      width:min(1260px,94%);margin:0 auto;height:62px;
+      display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:16px;
+      background:rgba(14,14,14,.5);
+      backdrop-filter:blur(22px) saturate(1.5);
+      -webkit-backdrop-filter:blur(22px) saturate(1.5);
+      border:1px solid rgba(255,255,255,.12);border-radius:18px;
+      padding:0 10px 0 22px;
+      box-shadow:0 18px 44px -22px rgba(0,0,0,.65),inset 0 1px 0 rgba(255,255,255,.08);
+      transition:background .3s,border-color .3s;
+    }
+    .nav-inner::before{
+      content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+      background:linear-gradient(120deg,rgba(255,255,255,.09),transparent 42%);
+    }
+    .nav.scrolled .nav-inner{background:rgba(12,12,12,.64);border-color:rgba(255,255,255,.16)}
+    .nav-inner > .brand{justify-self:start}
+    .nav-inner > nav{justify-self:center}
+    .nav-inner > .btn{justify-self:end}
+    .nav-cta-mobile{display:none}
+    .brand{display:flex;align-items:center;gap:10px}
+    .brand .brand-ico{width:34px;height:34px}
+    .brand .brand-word{height:14px;width:auto;display:block}
+    .nav-links{display:flex;align-items:center;gap:30px;list-style:none}
+    .nav-links a{font-size:.93rem;font-weight:600;color:var(--text-dim);transition:color .2s}
+    .nav-links a:hover{color:#fff}
+    .nav .btn{padding:11px 22px;font-size:.92rem}
+    .hamburger{
+      display:none;background:none;border:none;cursor:pointer;
+      width:42px;height:42px;border-radius:10px;
+      flex-direction:column;align-items:center;justify-content:center;gap:5px;
+    }
+    .hamburger span{width:22px;height:2px;background:#fff;border-radius:2px;transition:.3s}
+    .nav.open .hamburger span:nth-child(1){transform:translateY(7px) rotate(45deg)}
+    .nav.open .hamburger span:nth-child(2){opacity:0}
+    .nav.open .hamburger span:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
+
+    /* ===== Hero ===== */
+    .hero{
+      position:relative;min-height:100svh;
+      display:flex;align-items:center;
+      padding:calc(var(--nav-h) + 48px) 0 96px;
+      background:url('/lp-assets/bg-hero.jpg') right top/cover no-repeat #0D0D0D;
+    }
+    .hero::before{
+      content:"";position:absolute;inset:0;
+      background:linear-gradient(90deg,rgba(13,13,13,.97) 0%,rgba(13,13,13,.88) 38%,rgba(13,13,13,.45) 70%,rgba(13,13,13,.25) 100%);
+    }
+    .hero::after{
+      content:"";position:absolute;left:0;right:0;bottom:0;height:140px;
+      background:linear-gradient(180deg,transparent,var(--bg));
+    }
+    .hero-inner{position:relative;z-index:2;max-width:700px}
+    .hero-badge{
+      display:inline-flex;align-items:center;gap:8px;
+      background:var(--accent-soft);border:1px solid rgba(255,92,26,.35);
+      color:#FFB08A;font-size:.82rem;font-weight:600;
+      padding:7px 14px;border-radius:100px;margin-bottom:22px;
+    }
+    .hero-badge .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 1.8s infinite}
+    @keyframes pulse{0%,100%{box-shadow:0 0 0 0 var(--accent-glow)}55%{box-shadow:0 0 0 7px transparent}}
+    .hero h1{font-size:clamp(2.1rem,5.2vw,3.6rem);margin-bottom:20px}
+    .hero h1 em{font-style:normal;color:var(--accent)}
+    .hero p{font-size:1.12rem;color:#C9C8C2;max-width:540px;margin-bottom:34px}
+    .hero-ctas{display:flex;gap:14px;flex-wrap:wrap}
+    .hero-foot{
+      display:flex;gap:26px;flex-wrap:wrap;margin-top:44px;
+      color:var(--text-dim);font-size:.86rem;font-weight:500;
+    }
+    .hero-foot span{display:flex;align-items:center;gap:7px}
+    .hero-foot svg{color:var(--accent);flex:none}
+
+    /* ===== Section paddings ===== */
+    .sec{padding:96px 0}
+    .light{background:var(--light-bg);color:var(--light-text)}
+
+    /* ===== Como funciona ===== */
+    .steps{
+      display:grid;grid-template-columns:repeat(4,1fr);gap:22px;
+      counter-reset:step;position:relative;
+    }
+    .step{
+      position:relative;background:var(--light-card);
+      border:1px solid var(--light-border);border-radius:var(--radius);
+      padding:30px 24px 26px;
+      transition:transform .25s,box-shadow .25s,border-color .25s;
+    }
+    .step:hover{transform:translateY(-5px);border-color:#F0B597;box-shadow:0 18px 40px -18px rgba(20,15,10,.18)}
+    .step-num{
+      width:42px;height:42px;border-radius:12px;
+      background:linear-gradient(135deg,#FF7A33,var(--accent));
+      color:#fff;font-weight:800;font-size:1.05rem;
+      display:flex;align-items:center;justify-content:center;
+      margin-bottom:18px;box-shadow:0 8px 20px -8px var(--accent-glow);
+    }
+    .step h3{font-size:1.08rem;margin-bottom:8px}
+    .step p{font-size:.92rem;color:var(--light-dim)}
+    .step::after{
+      content:"";position:absolute;top:50%;right:-22px;width:22px;height:2px;
+      background:repeating-linear-gradient(90deg,#E0946B 0 5px,transparent 5px 9px);
+    }
+    .step:last-child::after{display:none}
+
+    /* ===== IA cards ===== */
+    .ia-note{
+      display:inline-flex;align-items:center;gap:10px;
+      background:var(--card);border:1px solid var(--card-border);
+      padding:10px 18px;border-radius:100px;
+      color:var(--text-dim);font-size:.88rem;font-weight:500;margin-top:18px;
+    }
+    .ia-note svg{color:var(--accent)}
+    .ia-grid{
+      display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-top:46px;
+    }
+    .ia-card{
+      background:var(--card);border:1px solid var(--card-border);
+      border-radius:var(--radius);padding:26px 20px;
+      display:flex;flex-direction:column;gap:14px;
+      transition:transform .25s,border-color .25s,box-shadow .25s,opacity .25s;
+    }
+    .ia-card:hover{transform:translateY(-5px);border-color:rgba(255,92,26,.55);box-shadow:0 20px 44px -20px var(--accent-glow)}
+    .ia-icon{
+      width:52px;height:52px;border-radius:14px;
+      background:var(--accent-soft);border:1px solid rgba(255,92,26,.3);
+      display:flex;align-items:center;justify-content:center;color:var(--accent);
+      transition:opacity .25s;
+    }
+    .ia-card h3{font-size:1.02rem}
+    .ia-card p{font-size:.86rem;color:var(--text-dim);flex:1}
+    .ia-card.off .ia-icon,.ia-card.off h3,.ia-card.off p{opacity:.35}
+    .ia-toggle-row{
+      display:flex;align-items:center;justify-content:space-between;gap:10px;
+      border-top:1px solid #262626;padding-top:14px;
+    }
+    .ia-status{font-size:.75rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
+    .ia-card.off .ia-status{color:#6E6E68}
+    .switch{position:relative;width:46px;height:26px;flex:none;cursor:pointer}
+    .switch input{opacity:0;width:0;height:0}
+    .slider{
+      position:absolute;inset:0;border-radius:100px;
+      background:#333;transition:.25s;
+    }
+    .slider::before{
+      content:"";position:absolute;width:20px;height:20px;border-radius:50%;
+      left:3px;top:3px;background:#fff;transition:.25s;
+    }
+    .switch input:checked + .slider{background:var(--accent);box-shadow:0 0 14px -2px var(--accent-glow)}
+    .switch input:checked + .slider::before{transform:translateX(20px)}
+    .switch input:focus-visible + .slider{outline:2px solid var(--accent);outline-offset:2px}
+
+    /* ===== Simulador da IA (cena animada) ===== */
+    .ia-demo{margin:46px 0 56px}
+    .ia-chips{display:flex;flex-wrap:wrap;gap:9px;align-items:center;justify-content:center;margin-bottom:18px}
+    .ia-chips-label{font-size:.8rem;color:var(--text-dim);font-weight:600;margin-right:4px}
+    .ia-chip{
+      background:#161616;border:1px solid #2C2C2C;color:#C9C8C2;
+      font-family:inherit;font-size:.82rem;font-weight:600;
+      padding:8px 16px;border-radius:100px;cursor:pointer;transition:.2s;
+    }
+    .ia-chip:hover{border-color:var(--accent);color:#fff}
+    .ia-chip.active{background:var(--accent-soft);border-color:var(--accent);color:#FFB08A}
+    .ia-stage{
+      position:relative;background:#0F0F0F;border:1px solid #242424;
+      border-radius:20px 20px 0 0;overflow:hidden;
+    }
+    .ia-stage svg{display:block;width:100%;height:auto}
+    .ia-console{
+      font-family:ui-monospace,'Cascadia Mono',Consolas,monospace;font-size:.78rem;color:#8A8A84;
+      padding:12px 18px;background:#0B0B0B;border:1px solid #242424;border-top:1px solid #1B1B1B;
+      border-radius:0 0 20px 20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    }
+    .ia-console .t{color:var(--accent)}
+    .ia-cursor{
+      display:inline-block;width:7px;height:13px;background:var(--accent);
+      margin-left:6px;vertical-align:middle;animation:blink 1.1s steps(1) infinite;
+    }
+    @keyframes blink{50%{opacity:0}}
+    #scanline{animation:scan 3.4s linear infinite}
+    @keyframes scan{from{transform:translateX(0)}to{transform:translateX(640px)}}
+    #beaconHalo{animation:beaconPulse 2.1s ease-in-out infinite}
+    @keyframes beaconPulse{0%,100%{opacity:.25}50%{opacity:.8}}
+    .ia-stage.alerting #beaconHalo{animation-duration:.5s}
+    #beaconRing{opacity:0;transform-box:fill-box;transform-origin:center}
+    .ia-stage.alerting #beaconRing{animation:ringOut 1s ease-out infinite}
+    @keyframes ringOut{0%{opacity:.9;transform:scale(.4)}100%{opacity:0;transform:scale(3)}}
+    .fx{opacity:0;transition:opacity .3s}
+    .ia-stage[data-threat="arma-fogo"] #fxGun{opacity:1}
+    .ia-stage[data-threat="arma-branca"] #fxKnife{opacity:1}
+    .ia-stage[data-threat="movimento"] #fxMotion{opacity:1}
+    .ia-stage[data-threat="fogo"] #fxFire{opacity:1}
+    .ia-stage[data-threat="fumaca"] #fxSmoke{opacity:1}
+    #fxFire path{transform-box:fill-box;transform-origin:bottom;animation:flicker .34s ease-in-out infinite}
+    #fxFire path:nth-child(2){animation-delay:.17s}
+    @keyframes flicker{0%,100%{transform:scaleY(1)}50%{transform:scaleY(.8)}}
+    #fxSmoke circle{animation:rise 2.6s linear infinite}
+    #fxSmoke circle:nth-child(2){animation-delay:.9s}
+    #fxSmoke circle:nth-child(3){animation-delay:1.7s}
+    @keyframes rise{0%{transform:translateY(0);opacity:.5}100%{transform:translateY(-52px);opacity:0}}
+    #fxMotion path{animation:motionpulse 1s linear infinite}
+    #fxMotion path:nth-child(2){animation-delay:.18s}
+    #fxMotion path:nth-child(3){animation-delay:.36s}
+    @keyframes motionpulse{0%,100%{opacity:.15}50%{opacity:.7}}
+    #detGroup{opacity:0;transform-box:fill-box;transform-origin:center}
+    #detGroup.lock{animation:detLock .5s cubic-bezier(.2,.9,.3,1.2) forwards}
+    @keyframes detLock{0%{opacity:0;transform:scale(1.14)}100%{opacity:1;transform:scale(1)}}
+    #iaFlash{opacity:0;pointer-events:none}
+    #iaFlash.go{animation:flashA .55s ease-out}
+    @keyframes flashA{0%{opacity:0}12%{opacity:.3}100%{opacity:0}}
+    .flowpath{animation:flowdash 1.2s linear infinite}
+    @keyframes flowdash{to{stroke-dashoffset:-24}}
+    .pulse{opacity:0}
+    .dest .ping{opacity:0;transform-box:fill-box;transform-origin:center}
+    .dest.hit .ping{animation:ringOut .8s ease-out}
+    .dest.hit .dest-box{stroke:var(--accent)}
+    .dest.hit .dest-ic{stroke:var(--accent)}
+    #recDot{animation:blink 1.3s steps(1) infinite}
+    /* WhatsApp toast (notificação chegando na cena) */
+    .wa-toast{
+      position:absolute;right:16px;bottom:16px;width:min(320px,82%);
+      display:flex;gap:11px;align-items:flex-start;z-index:4;
+      background:rgba(16,23,18,.97);border:1px solid rgba(37,211,102,.4);
+      border-radius:16px;padding:12px 14px;
+      box-shadow:0 18px 44px -14px rgba(0,0,0,.8),0 0 34px -14px rgba(37,211,102,.5);
+      opacity:0;transform:translateY(18px) scale(.95);pointer-events:none;
+      transition:opacity .3s,transform .3s;
+    }
+    .wa-toast.show{
+      opacity:1;transform:none;
+      transition:opacity .35s cubic-bezier(.2,.9,.3,1.3),transform .35s cubic-bezier(.2,.9,.3,1.3);
+    }
+    .wa-ico{
+      width:38px;height:38px;border-radius:50%;background:#25D366;flex:none;
+      display:flex;align-items:center;justify-content:center;
+    }
+    .wa-body{min-width:0;flex:1}
+    .wa-top{display:flex;justify-content:space-between;gap:8px;font-size:.8rem;color:#fff}
+    .wa-top strong{font-weight:700}
+    .wa-top span{color:#7F8D84;font-size:.7rem;flex:none}
+    .wa-text{font-size:.8rem;color:#D9E2DC;margin-top:2px;line-height:1.4}
+    .wa-text b{color:#fff}
+    .wa-attach{
+      margin-top:7px;font-size:.72rem;color:#9FB3A7;
+      background:#182219;border:1px solid #24382A;border-radius:8px;
+      padding:5px 9px;display:inline-flex;align-items:center;gap:6px;
+    }
+
+    /* ===== Alertas timeline ===== */
+    .alert-flow{
+      display:grid;grid-template-columns:repeat(5,1fr);gap:14px;
+      margin:56px 0 64px;position:relative;
+    }
+    .alert-flow::before{
+      content:"";position:absolute;top:33px;left:8%;right:8%;height:2px;
+      background:linear-gradient(90deg,#F3C9AF,var(--accent),#F3C9AF);
+      z-index:0;
+    }
+    .flow-item{position:relative;z-index:1;text-align:center;padding:0 6px}
+    .flow-icon{
+      width:66px;height:66px;border-radius:50%;
+      background:#fff;border:2px solid var(--accent);color:var(--accent);
+      display:flex;align-items:center;justify-content:center;margin:0 auto 16px;
+      box-shadow:0 10px 26px -12px var(--accent-glow);
+      transition:transform .25s,background .25s,color .25s;
+    }
+    .flow-item:hover .flow-icon{transform:scale(1.1);background:var(--accent);color:#fff}
+    .flow-item h3{font-size:.98rem;margin-bottom:5px}
+    .flow-item p{font-size:.84rem;color:var(--light-dim)}
+    .mockup-wrap{
+      background:linear-gradient(180deg,#171717,#0D0D0D);
+      border-radius:24px;padding:44px 34px 0;overflow:hidden;
+      border:1px solid #262626;
+      box-shadow:0 40px 80px -40px rgba(0,0,0,.5);
+    }
+    .mockup-head{text-align:center;max-width:560px;margin:0 auto 8px}
+    .mockup-head h3{color:#fff;font-size:1.35rem;margin-bottom:8px}
+    .mockup-head p{color:var(--text-dim);font-size:.95rem}
+    .mockup-wrap img{margin:18px auto -8px;max-width:920px;width:100%}
+
+    /* ===== Modelo de negócio ===== */
+    .biz-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+    .biz-card{
+      background:var(--card);border:1px solid var(--card-border);
+      border-radius:var(--radius);padding:34px 28px;
+      position:relative;overflow:hidden;
+      transition:transform .25s,border-color .25s;
+    }
+    .biz-card:hover{transform:translateY(-5px);border-color:rgba(255,92,26,.5)}
+    .biz-card::before{
+      content:"";position:absolute;top:0;left:28px;right:28px;height:2px;
+      background:linear-gradient(90deg,var(--accent),transparent);
+    }
+    .biz-tag{
+      display:inline-block;font-size:.72rem;font-weight:800;letter-spacing:.1em;
+      text-transform:uppercase;color:var(--accent);
+      background:var(--accent-soft);padding:5px 12px;border-radius:100px;margin-bottom:18px;
+    }
+    .biz-card h3{font-size:1.25rem;margin-bottom:12px}
+    .biz-card p{color:var(--text-dim);font-size:.95rem}
+    .biz-card ul{list-style:none;margin-top:16px;display:grid;gap:9px}
+    .biz-card li{display:flex;gap:9px;font-size:.9rem;color:#D8D7D2}
+    .biz-card li svg{color:var(--accent);flex:none;margin-top:3px}
+
+    /* ===== Totens ===== */
+    .totem-sec{
+      position:relative;padding:110px 0;
+      display:flex;align-items:center;
+      min-height:min(50vw,940px);
+      background:url('/lp-assets/bg-ia-totem.jpg') right top/cover no-repeat #0D0D0D;
+    }
+    .totem-sec::before{
+      content:"";position:absolute;inset:0;
+      background:linear-gradient(90deg,rgba(13,13,13,.96) 0%,rgba(13,13,13,.85) 42%,rgba(13,13,13,.35) 78%,rgba(13,13,13,.15) 100%);
+    }
+    .totem-sec::after,
+    .totem-top-fade{content:"";position:absolute;left:0;right:0;height:160px;pointer-events:none}
+    .totem-sec::after{bottom:0;background:linear-gradient(180deg,transparent,rgba(13,13,13,.6) 55%,var(--bg))}
+    .totem-top-fade{top:0;background:linear-gradient(0deg,transparent,var(--bg))}
+    .totem-inner{position:relative;z-index:2;max-width:600px}
+    .totem-inner .check-list{list-style:none;display:grid;gap:14px;margin-top:30px}
+    .check-list li{display:flex;gap:12px;align-items:flex-start;font-weight:500;color:#E4E3DD}
+    .check-list .chk{
+      width:24px;height:24px;border-radius:8px;flex:none;margin-top:1px;
+      background:var(--accent-soft);border:1px solid rgba(255,92,26,.4);
+      display:flex;align-items:center;justify-content:center;color:var(--accent);
+    }
+    .totem-media-note{
+      margin-top:34px;padding:18px 22px;border-radius:14px;
+      background:rgba(26,26,26,.75);border:1px solid #2E2E2E;backdrop-filter:blur(6px);
+      font-size:.93rem;color:#D8D7D2;
+    }
+    .totem-media-note strong{color:var(--accent)}
+
+    /* ===== Quem confia (case Viggia) ===== */
+    .case-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:22px;align-items:stretch}
+    .case-card{
+      background:var(--light-card);border:1px solid var(--light-border);
+      border-radius:20px;overflow:hidden;
+      display:grid;grid-template-columns:.85fr 1.15fr;
+    }
+    .case-photo{width:100%;height:100%;object-fit:cover;min-height:360px;display:block}
+    .case-body{padding:32px 30px;display:flex;flex-direction:column;gap:14px;justify-content:center;align-items:flex-start}
+    .case-tag{
+      display:inline-block;font-size:.72rem;font-weight:800;letter-spacing:.1em;
+      text-transform:uppercase;color:var(--accent);
+      background:rgba(255,92,26,.1);border:1px solid rgba(255,92,26,.3);
+      padding:5px 12px;border-radius:100px;
+    }
+    .case-body h3{font-size:1.5rem;letter-spacing:-.01em}
+    .case-body > p{color:var(--light-dim);font-size:.96rem}
+    .case-list{list-style:none;display:grid;gap:9px}
+    .case-list li{display:flex;gap:9px;font-size:.92rem;font-weight:500;color:#33322F}
+    .case-list li svg{color:var(--accent);flex:none;margin-top:3px}
+    .case-ig{padding:12px 22px;font-size:.92rem;gap:9px}
+    .case-reel{
+      background:var(--light-card);border:1px solid var(--light-border);
+      border-radius:20px;padding:20px 16px 14px;
+      display:flex;flex-direction:column;align-items:center;gap:10px;
+    }
+    .case-reel-cap{font-size:.8rem;color:var(--light-dim);font-weight:500}
+    .case-next{
+      margin-top:24px;display:flex;align-items:center;justify-content:space-between;
+      gap:18px;flex-wrap:wrap;
+      background:var(--light-card);border:1px solid var(--light-border);
+      border-radius:16px;padding:22px 28px;
+    }
+    .case-next p{color:var(--light-dim);font-size:.98rem}
+    .case-next strong{color:var(--light-text)}
+    @media(max-width:1020px){
+      .case-grid{grid-template-columns:1fr}
+      .case-reel{padding:18px 12px 12px}
+    }
+    @media(max-width:640px){
+      .case-card{grid-template-columns:1fr}
+      .case-photo{min-height:280px;max-height:340px}
+      .case-next{justify-content:center;text-align:center}
+    }
+
+    /* ===== CTA final ===== */
+    .final-cta{
+      position:relative;padding:130px 0;text-align:center;overflow:hidden;
+      background:var(--bg);
+    }
+    .final-cta::before{
+      content:"";position:absolute;left:50%;top:-260px;transform:translateX(-50%);
+      width:820px;height:520px;border-radius:50%;
+      background:radial-gradient(closest-side,rgba(255,92,26,.22),transparent);
+      pointer-events:none;
+    }
+    .final-cta .container{position:relative;z-index:2}
+    .final-cta h2{font-size:clamp(1.9rem,4.4vw,3rem);max-width:760px;margin:0 auto 16px}
+    .final-cta p{color:var(--text-dim);max-width:560px;margin:0 auto 38px;font-size:1.08rem}
+    .final-ctas{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+
+    /* ===== Footer ===== */
+    footer{background:#0A0A0A;border-top:1px solid #1E1E1E;padding:64px 0 34px}
+    .foot-grid{
+      display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:40px;margin-bottom:48px;
+    }
+    .foot-brand img{width:130px;margin-bottom:16px}
+    .foot-brand p{color:var(--text-dim);font-size:.9rem;max-width:300px}
+    .foot-col h4{font-size:.82rem;letter-spacing:.12em;text-transform:uppercase;color:#7B7B75;margin-bottom:18px}
+    .foot-col ul{list-style:none;display:grid;gap:11px}
+    .foot-col a{color:#C9C8C2;font-size:.92rem;transition:color .2s}
+    .foot-col a:hover{color:var(--accent)}
+    .foot-bottom{
+      border-top:1px solid #1C1C1C;padding-top:26px;
+      display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;
+      color:#6E6E68;font-size:.82rem;
+    }
+
+    /* ===== Modal / Form ===== */
+    .modal{
+      position:fixed;inset:0;z-index:200;display:none;
+      align-items:center;justify-content:center;padding:20px;
+    }
+    .modal.active{display:flex}
+    .modal-backdrop{
+      position:absolute;inset:0;background:rgba(5,5,5,.82);backdrop-filter:blur(8px);
+      animation:fadeIn .25s;
+    }
+    @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+    .modal-card{
+      position:relative;z-index:2;width:min(520px,100%);
+      background:linear-gradient(180deg,#191919,#111);
+      border:1px solid #2C2C2C;border-radius:22px;
+      padding:38px 36px 34px;
+      box-shadow:0 40px 100px -30px rgba(0,0,0,.8),0 0 60px -30px var(--accent-glow);
+      animation:popIn .3s cubic-bezier(.2,.9,.3,1.2);
+      overflow:hidden;
+    }
+    @keyframes popIn{from{opacity:0;transform:translateY(24px) scale(.96)}to{opacity:1;transform:none}}
+    .modal-close{
+      position:absolute;top:16px;right:16px;z-index:5;
+      width:38px;height:38px;border-radius:10px;border:1px solid #333;
+      background:#1D1D1D;color:#AAA;font-size:1rem;cursor:pointer;
+      display:flex;align-items:center;justify-content:center;transition:.2s;
+    }
+    .modal-close:hover{color:#fff;border-color:var(--accent)}
+    .progress-wrap{margin-bottom:30px}
+    .progress-meta{
+      display:flex;justify-content:space-between;font-size:.78rem;font-weight:600;
+      color:var(--text-dim);margin-bottom:9px;
+    }
+    .progress-meta strong{color:var(--accent)}
+    .progress-track{height:6px;border-radius:100px;background:#262626;overflow:hidden}
+    .progress-fill{
+      height:100%;width:0;border-radius:100px;
+      background:linear-gradient(90deg,#FF7A33,var(--accent));
+      box-shadow:0 0 12px var(--accent-glow);
+      transition:width .45s cubic-bezier(.4,0,.2,1);
+    }
+    .form-step{display:none;animation:stepIn .35s cubic-bezier(.25,.8,.3,1)}
+    .form-step.active{display:block}
+    @keyframes stepIn{from{opacity:0;transform:translateX(34px)}to{opacity:1;transform:none}}
+    .form-step label{
+      display:block;font-size:1.35rem;font-weight:800;letter-spacing:-.01em;
+      margin-bottom:6px;color:#fff;
+    }
+    .form-step .hint{color:var(--text-dim);font-size:.9rem;margin-bottom:20px;display:block}
+    .form-step input{
+      width:100%;padding:16px 18px;border-radius:13px;
+      background:#0E0E0E;border:1.5px solid #333;color:#fff;
+      font-family:inherit;font-size:1.05rem;font-weight:500;
+      transition:border-color .2s,box-shadow .2s;
+    }
+    .form-step input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px rgba(255,92,26,.15)}
+    .form-error{
+      display:none;align-items:center;gap:7px;
+      color:#FF8A5C;font-size:.85rem;font-weight:600;margin-top:10px;
+    }
+    .form-error.show{display:flex;animation:shake .35s}
+    @keyframes shake{0%,100%{transform:none}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+    .form-nav{display:flex;gap:12px;margin-top:26px}
+    .form-nav .btn{flex:1;padding:15px 10px}
+    .btn-back{background:#222;color:#CCC;max-width:110px}
+    .btn-back:hover{background:#2C2C2C}
+    .enter-tip{
+      text-align:center;margin-top:16px;color:#6E6E68;font-size:.78rem;
+    }
+    .enter-tip kbd{
+      background:#222;border:1px solid #383838;border-radius:5px;
+      padding:2px 7px;font-family:inherit;font-size:.75rem;color:#AAA;
+    }
+    /* choice cards (step momento do provedor) */
+    .choice-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:4px}
+    .choice-card{
+      background:#0E0E0E;border:1.5px solid #333;border-radius:14px;
+      padding:20px 12px;cursor:pointer;text-align:center;
+      display:flex;flex-direction:column;align-items:center;gap:10px;
+      transition:border-color .2s,transform .2s,background .2s,box-shadow .2s;
+      font-family:inherit;color:#DDD;
+    }
+    .choice-card:hover{border-color:var(--accent);transform:translateY(-3px)}
+    .choice-card svg{color:var(--accent);flex:none}
+    .choice-card strong{font-size:.9rem;font-weight:700;line-height:1.3;color:#fff}
+    .choice-card span{font-size:.76rem;color:var(--text-dim);line-height:1.45}
+    .choice-card.selected{
+      border-color:var(--accent);background:var(--accent-soft);
+      box-shadow:0 0 0 4px rgba(255,92,26,.15);
+    }
+    @media(max-width:640px){
+      .choice-grid{grid-template-columns:1fr;gap:9px}
+      .choice-card{flex-direction:row;text-align:left;padding:14px 16px}
+    }
+    /* success */
+    .form-success{display:none;text-align:center;padding:16px 0 6px}
+    .form-success.active{display:block;animation:stepIn .4s}
+    .check-anim{width:96px;height:96px;margin:0 auto 22px}
+    .check-anim circle{
+      fill:none;stroke:var(--accent);stroke-width:2.5;
+      stroke-dasharray:290;stroke-dashoffset:290;
+      animation:drawCircle .7s .1s ease forwards;
+    }
+    .check-anim path{
+      fill:none;stroke:var(--accent);stroke-width:6;stroke-linecap:round;stroke-linejoin:round;
+      stroke-dasharray:60;stroke-dashoffset:60;
+      animation:drawCheck .45s .65s ease forwards;
+    }
+    @keyframes drawCircle{to{stroke-dashoffset:0}}
+    @keyframes drawCheck{to{stroke-dashoffset:0}}
+    .form-success h3{font-size:1.55rem;margin-bottom:10px;color:#fff}
+    .form-success p{color:var(--text-dim);font-size:.98rem;max-width:340px;margin:0 auto}
+    #confettiCanvas{position:absolute;inset:0;pointer-events:none;z-index:4}
+
+    /* ===== Reveal on scroll ===== */
+    .reveal{opacity:0;transform:translateY(26px);transition:opacity .7s cubic-bezier(.22,.9,.3,1),transform .7s cubic-bezier(.22,.9,.3,1)}
+    .reveal.in{opacity:1;transform:none}
+    .reveal[data-d="1"]{transition-delay:.08s}
+    .reveal[data-d="2"]{transition-delay:.16s}
+    .reveal[data-d="3"]{transition-delay:.24s}
+    .reveal[data-d="4"]{transition-delay:.32s}
+
+    /* ===== Polimento: luzes ambientes, brilhos e detalhes ===== */
+    ::selection{background:rgba(255,92,26,.4);color:#fff}
+    .light ::selection{background:rgba(255,92,26,.25);color:#141414}
+    ::-webkit-scrollbar{width:11px}
+    ::-webkit-scrollbar-track{background:#0B0B0B}
+    ::-webkit-scrollbar-thumb{background:#2A2A2A;border-radius:10px;border:2px solid #0B0B0B}
+    ::-webkit-scrollbar-thumb:hover{background:var(--accent)}
+    :focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+    .orb{
+      position:absolute;border-radius:50%;pointer-events:none;z-index:0;
+      background:radial-gradient(circle,rgba(255,92,26,.13),transparent 68%);
+      animation:orbFloat 16s ease-in-out infinite;
+    }
+    @keyframes orbFloat{0%,100%{transform:translate(0,0)}50%{transform:translate(26px,-34px)}}
+    .hero{overflow:hidden}
+    #recursos,#modelo{position:relative;overflow:hidden}
+    #recursos .container,#modelo .container{position:relative;z-index:1}
+    .btn-primary{position:relative;overflow:hidden}
+    .btn-primary::after{
+      content:"";position:absolute;top:0;left:-80%;width:45%;height:100%;
+      background:linear-gradient(100deg,transparent,rgba(255,255,255,.35),transparent);
+      transform:skewX(-18deg);transition:left .55s ease;
+    }
+    .btn-primary:hover::after{left:135%}
+    .final-cta::before{animation:ctaGlow 7s ease-in-out infinite}
+    @keyframes ctaGlow{0%,100%{transform:translateX(-50%) scale(1);opacity:1}50%{transform:translateX(-50%) scale(1.1);opacity:.8}}
+    .mockup-wrap img{animation:floatY 7s ease-in-out infinite}
+    @keyframes floatY{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+    .reel-frame{
+      width:min(320px,100%);border-radius:22px;overflow:hidden;
+      border:1px solid var(--light-border);background:#000;
+      box-shadow:0 24px 50px -22px rgba(20,15,10,.35);
+    }
+    .reel-frame video{display:block;width:100%;aspect-ratio:9/16;object-fit:cover;background:#000}
+    .case-reel{justify-content:center}
+    .case-photo{object-position:center top}
+    .case-card{transition:transform .45s cubic-bezier(.22,.9,.3,1),box-shadow .3s ease,opacity .7s cubic-bezier(.22,.9,.3,1)}
+    .case-card:hover{transform:translateY(-4px);box-shadow:0 22px 48px -22px rgba(20,15,10,.2)}
+
+    /* ===== Responsive ===== */
+    @media(max-width:1100px){
+      .hero{background-position:80% top}
+    }
+    @media(max-width:1020px){
+      .ia-grid{grid-template-columns:repeat(3,1fr)}
+      .steps{grid-template-columns:repeat(2,1fr)}
+      .step::after{display:none}
+      .clients-grid{grid-template-columns:repeat(3,1fr)}
+    }
+    @media(max-width:860px){
+      .nav-inner{display:flex;justify-content:space-between;padding:0 12px 0 18px}
+      .nav-links{
+        position:absolute;top:calc(100% + 6px);left:0;right:0;
+        background:rgba(12,12,12,.88);
+        backdrop-filter:blur(24px) saturate(1.4);
+        -webkit-backdrop-filter:blur(24px) saturate(1.4);
+        flex-direction:column;align-items:flex-start;gap:0;
+        padding:8px 20px 20px;display:none;
+        border:1px solid #262626;border-radius:16px;
+        box-shadow:0 24px 50px -22px rgba(0,0,0,.8);
+      }
+      .nav.open .nav-links{display:flex}
+      .nav-links li{width:100%}
+      .nav-links a{display:block;padding:14px 0;font-size:1.02rem;border-bottom:1px solid #1B1B1B}
+      .hamburger{display:flex}
+      .nav-cta-desktop{display:none}
+      .nav-cta-mobile{display:block}
+      .alert-flow{grid-template-columns:1fr;gap:26px;max-width:420px;margin-left:auto;margin-right:auto}
+      .alert-flow::before{left:32px;right:auto;top:20px;bottom:20px;width:2px;height:auto;background:linear-gradient(180deg,#F3C9AF,var(--accent),#F3C9AF)}
+      .flow-item{display:flex;text-align:left;gap:18px;align-items:flex-start}
+      .flow-icon{margin:0;flex:none}
+      .biz-grid{grid-template-columns:1fr}
+      .foot-grid{grid-template-columns:1fr;gap:32px}
+      .hero{background-position:88% top}
+      .totem-sec{background-position:86% top}
+    }
+    @media(max-width:640px){
+      .sec{padding:72px 0}
+      .ia-grid{grid-template-columns:1fr 1fr}
+      .steps{grid-template-columns:1fr}
+      .clients-grid{grid-template-columns:repeat(2,1fr)}
+      .modal-card{padding:30px 22px 26px}
+      .hero-ctas .btn{width:100%}
+      .final-ctas .btn{width:100%}
+      .mockup-wrap{padding:32px 18px 0}
+    }
+    @media(max-width:440px){
+      .ia-grid{grid-template-columns:1fr}
+    }
+    @media(prefers-reduced-motion:reduce){
+      *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+      html{scroll-behavior:auto}
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ===================== NAVBAR ===================== -->
+  <header class="nav" id="nav">
+    <div class="nav-inner">
+      <a href="#inicio" class="brand" aria-label="Corexia, início">
+        <img src="/lp-assets/logo-icon.png" alt="" class="brand-ico" width="34" height="34">
+        <img src="/lp-assets/logo-wordmark.png" alt="COREXIA" class="brand-word">
+      </a>
+      <nav>
+        <ul class="nav-links" id="navLinks">
+          <li><a href="#como-funciona">Como funciona</a></li>
+          <li><a href="#recursos">Recursos</a></li>
+          <li><a href="#alertas">Alertas</a></li>
+          <li><a href="#clientes">Clientes</a></li>
+          <li class="nav-cta-mobile" style="padding-top:14px">
+            <button class="btn btn-primary js-open-form" data-cta="navbar-mobile" style="width:100%">Agendar demonstração</button>
+          </li>
+        </ul>
+      </nav>
+      <button class="btn btn-primary nav-cta-desktop js-open-form" data-cta="navbar">Agendar demonstração</button>
+      <button class="hamburger" id="hamburger" aria-label="Abrir menu">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ===================== 2. HERO ===================== -->
+    <section class="hero" id="inicio">
+      <div class="orb" style="width:540px;height:540px;top:6%;left:-160px"></div>
+      <div class="orb" style="width:320px;height:320px;bottom:10%;left:32%;animation-delay:-7s"></div>
+      <div class="container">
+        <div class="hero-inner">
+          <span class="hero-badge"><span class="dot"></span> Exclusivo para provedores de internet</span>
+          <h1>Transforme seu provedor na <em>referência de segurança</em> da cidade</h1>
+          <p>Totens com câmeras nas ruas, IA de detecção em tempo real e um painel com a sua marca no comando. Você revende segurança aos seus assinantes e cria uma <strong style="color:#fff">nova receita recorrente</strong>.</p>
+          <div class="hero-ctas">
+            <button class="btn btn-primary btn-lg js-open-form" data-cta="hero">Agendar demonstração</button>
+            <a href="#recursos" class="btn btn-ghost btn-lg" data-cta="hero-como-funciona">Ver como funciona</a>
+          </div>
+          <div class="hero-foot">
+            <span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> Instalação por nossa conta</span>
+            <span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> Painel pronto pra operar</span>
+            <span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> IA monitorando 24/7</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 4. COMO FUNCIONA (branco) ===================== -->
+    <section class="sec light" id="como-funciona">
+      <div class="container">
+        <div class="section-head center reveal">
+          <span class="eyebrow" style="justify-content:center">Como funciona</span>
+          <h2>Da rua ao faturamento em 4 passos</h2>
+          <p class="section-sub">A Corexia entrega a infraestrutura completa. Seu provedor entra com a marca e os assinantes, e fica com a receita.</p>
+        </div>
+        <div class="steps">
+          <div class="step reveal" data-d="1">
+            <div class="step-num">1</div>
+            <h3>Câmeras e totens instalados</h3>
+            <p>Nossa equipe instala os totens com câmeras nos pontos estratégicos da cidade. Sem obra, sem equipe própria, sem dor de cabeça.</p>
+          </div>
+          <div class="step reveal" data-d="2">
+            <div class="step-num">2</div>
+            <h3>IA Corexia analisa em tempo real</h3>
+            <p>Arma de fogo, arma branca, fumaça, fogo e movimento: a IA processa as imagens 24/7, sem depender de operador olhando tela.</p>
+          </div>
+          <div class="step reveal" data-d="3">
+            <div class="step-num">3</div>
+            <h3>Alerta dispara na hora</h3>
+            <p>Print automático da cena, alerta piscando com som no painel, push no app e mensagem no WhatsApp. Ninguém fica sem saber.</p>
+          </div>
+          <div class="step reveal" data-d="4">
+            <div class="step-num">4</div>
+            <h3>Cliente protegido, provedor faturando</h3>
+            <p>Seu assinante recebe segurança de verdade. Você revende o serviço na mensalidade e cria receita recorrente nova.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 5. A IA QUE DETECTA (preto) ===================== -->
+    <section class="sec" id="recursos">
+      <div class="orb" style="width:520px;height:520px;top:-140px;right:-150px"></div>
+      <div class="orb" style="width:380px;height:380px;bottom:-100px;left:-120px;animation-delay:-9s"></div>
+      <div class="container">
+        <div class="section-head center reveal">
+          <span class="eyebrow" style="justify-content:center">A IA que detecta</span>
+          <h2>Cinco detecções. Você no controle de todas.</h2>
+          <p class="section-sub">Veja a IA em ação na simulação abaixo: clique em um tipo de detecção e acompanhe o alerta viajar do totem até o painel, o app e o WhatsApp.</p>
+        </div>
+
+        <!-- Simulação gamificada: totem + IA + fluxo do alerta -->
+        <div class="ia-demo reveal">
+          <div class="ia-chips" id="iaChips">
+            <span class="ia-chips-label">Simular detecção:</span>
+            <button type="button" class="ia-chip" data-threat="arma-fogo">Arma de fogo</button>
+            <button type="button" class="ia-chip" data-threat="arma-branca">Arma branca</button>
+            <button type="button" class="ia-chip" data-threat="fumaca">Fumaça</button>
+            <button type="button" class="ia-chip" data-threat="fogo">Fogo</button>
+            <button type="button" class="ia-chip" data-threat="movimento">Movimento</button>
+          </div>
+          <div class="ia-stage" id="iaStage">
+            <svg id="iaScene" viewBox="0 0 960 460" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" role="img" aria-label="Simulação da IA Corexia detectando ocorrências na rua a partir do totem">
+              <defs>
+                <linearGradient id="fovGrad" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0" stop-color="#FF5C1A" stop-opacity=".13"/>
+                  <stop offset="1" stop-color="#FF5C1A" stop-opacity="0"/>
+                </linearGradient>
+                <clipPath id="coneClip"><polygon points="166,140 950,52 950,368"/></clipPath>
+                <filter id="softGlow" x="-80%" y="-80%" width="260%" height="260%">
+                  <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#FF5C1A" flood-opacity=".8"/>
+                </filter>
+              </defs>
+
+              <!-- fundo: prédios e rua -->
+              <g fill="#141414">
+                <rect x="40" y="170" width="86" height="210"/>
+                <rect x="240" y="210" width="64" height="170"/>
+                <rect x="330" y="150" width="92" height="230"/>
+                <rect x="560" y="200" width="70" height="180"/>
+                <rect x="880" y="170" width="70" height="210"/>
+              </g>
+              <g fill="#1B1B1B">
+                <rect x="52" y="190" width="10" height="12"/><rect x="76" y="190" width="10" height="12"/><rect x="100" y="190" width="10" height="12"/>
+                <rect x="52" y="220" width="10" height="12"/><rect x="76" y="220" width="10" height="12"/><rect x="100" y="220" width="10" height="12"/>
+                <rect x="346" y="176" width="10" height="12"/><rect x="368" y="176" width="10" height="12"/><rect x="390" y="176" width="10" height="12"/>
+                <rect x="346" y="206" width="10" height="12"/><rect x="368" y="206" width="10" height="12"/><rect x="390" y="206" width="10" height="12"/>
+              </g>
+              <rect x="0" y="368" width="960" height="12" fill="#161616"/>
+              <rect x="0" y="380" width="960" height="80" fill="#121212"/>
+              <line x1="0" y1="422" x2="960" y2="422" stroke="#242424" stroke-width="3" stroke-dasharray="30 24"/>
+
+              <!-- cone de visão + varredura -->
+              <polygon points="166,140 950,52 950,368" fill="url(#fovGrad)"/>
+              <g clip-path="url(#coneClip)">
+                <line id="scanline" x1="300" y1="40" x2="300" y2="380" stroke="#FF5C1A" stroke-opacity=".32" stroke-width="2.5"/>
+              </g>
+
+              <!-- rotas do alerta -->
+              <path id="flow0" class="flowpath" d="M166 128 C 300 46, 500 34, 682 58" fill="none" stroke="#2C2C2C" stroke-width="1.5" stroke-dasharray="5 7"/>
+              <path id="flow1" class="flowpath" d="M166 128 C 320 30, 560 16, 782 54" fill="none" stroke="#2C2C2C" stroke-width="1.5" stroke-dasharray="5 7"/>
+              <path id="flow2" class="flowpath" d="M166 128 C 340 18, 600 4, 882 50" fill="none" stroke="#2C2C2C" stroke-width="1.5" stroke-dasharray="5 7"/>
+
+              <!-- totem Corexia -->
+              <g>
+                <rect x="124" y="368" width="56" height="10" rx="3" fill="#1D1D1D"/>
+                <rect x="132" y="150" width="40" height="222" rx="12" fill="#1B1B1B" stroke="#2F2F2F" stroke-width="1.5"/>
+                <path d="M152 186 l10 6 v12 l-10 6 l-10 -6 v-12 z" fill="var(--accent)" opacity=".9"/>
+                <rect x="141" y="222" width="22" height="3" rx="1.5" fill="#2E2E2E"/>
+                <rect x="141" y="232" width="22" height="3" rx="1.5" fill="#2E2E2E"/>
+                <rect x="141" y="242" width="14" height="3" rx="1.5" fill="#2E2E2E"/>
+                <circle cx="152" cy="140" r="14" fill="#212121" stroke="#333" stroke-width="1.5"/>
+                <circle cx="158" cy="138" r="5" fill="#0D0D0D" stroke="#FF5C1A" stroke-width="1.2"/>
+                <circle cx="137" cy="146" r="4" fill="#181818" stroke="#333" stroke-width="1"/>
+                <circle id="beaconHalo" cx="152" cy="116" r="17" fill="#FF9A3D" opacity=".3"/>
+                <circle id="beaconRing" cx="152" cy="116" r="12" fill="none" stroke="#FF7A33" stroke-width="2"/>
+                <ellipse cx="152" cy="116" rx="9" ry="8" fill="#FFB020"/>
+                <rect x="143" y="122" width="18" height="5" rx="2" fill="#2A2A2A"/>
+              </g>
+
+              <!-- tag AO VIVO -->
+              <g>
+                <rect x="20" y="20" width="92" height="26" rx="13" fill="#161616" stroke="#2A2A2A"/>
+                <circle id="recDot" cx="36" cy="33" r="4" fill="#FF3B30"/>
+                <text x="46" y="37" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#C9C8C2" letter-spacing="1">AO VIVO</text>
+              </g>
+
+              <!-- alvo: pessoa -->
+              <g id="tgPerson">
+                <g id="fxMotion" class="fx" stroke="#3E3E3E" stroke-width="3" fill="none" stroke-linecap="round">
+                  <path d="M468 258 a44 44 0 0 1 0 58"/>
+                  <path d="M455 250 a56 56 0 0 1 0 74"/>
+                  <path d="M442 242 a68 68 0 0 1 0 90"/>
+                </g>
+                <circle cx="505" cy="242" r="11" fill="#333"/>
+                <path d="M505 253 v52 M505 268 l-24 22 M505 268 l26 16 M505 305 l-16 58 M505 305 l17 58" stroke="#333" stroke-width="8" stroke-linecap="round" fill="none"/>
+                <path id="fxGun" class="fx" d="M529 280 h18 v5 h-10 l-3 7 h-6 z" fill="#6E6E6E"/>
+                <g id="fxKnife" class="fx" stroke="#8A8A8A" stroke-width="3" stroke-linecap="round">
+                  <path d="M531 284 l15 -11"/>
+                  <path d="M533 278 l6 7"/>
+                </g>
+              </g>
+
+              <!-- alvo: carro (fogo e fumaça) -->
+              <g id="tgCar">
+                <path d="M650 342 h190 a10 10 0 0 0 10 -10 v-4 a14 14 0 0 0 -14 -14 h-32 l-26 -22 h-68 l-22 22 h-28 a10 10 0 0 0 -10 10 v8 a10 10 0 0 0 10 10 z" fill="#1F1F1F" stroke="#2E2E2E" stroke-width="1.5"/>
+                <circle cx="695" cy="344" r="13" fill="#111" stroke="#333" stroke-width="3"/>
+                <circle cx="815" cy="344" r="13" fill="#111" stroke="#333" stroke-width="3"/>
+                <g id="fxFire" class="fx">
+                  <path d="M735 292 c10 -2 12 -14 6 -24 c14 4 22 18 18 32 c-3 10 -12 16 -22 16 c-10 0 -19 -7 -21 -17 c-2 -9 3 -18 10 -22 c-2 6 2 14 9 15 z" fill="#FF5C1A"/>
+                  <path d="M741 300 c5 -1 6 -8 3 -13 c8 3 12 11 9 18 c-2 6 -7 9 -12 9 c-6 0 -10 -4 -11 -9 c-1 -5 1 -10 5 -12 c-1 3 2 7 6 7 z" fill="#FFB020"/>
+                </g>
+                <g id="fxSmoke" class="fx" fill="#4A4A4A" opacity=".9">
+                  <circle cx="742" cy="236" r="10"/>
+                  <circle cx="752" cy="216" r="13"/>
+                  <circle cx="738" cy="196" r="16"/>
+                </g>
+              </g>
+
+              <!-- caixa de detecção -->
+              <g id="detGroup">
+                <rect id="detRect" x="462" y="210" width="118" height="178" fill="rgba(255,92,26,.06)" stroke="#FF5C1A" stroke-width="1" stroke-opacity=".45"/>
+                <path id="detCorners" d="" fill="none" stroke="#FF5C1A" stroke-width="3" stroke-linecap="round"/>
+                <rect id="detLabelBg" x="0" y="0" width="150" height="26" rx="7" fill="#0D0D0D" fill-opacity=".92" stroke="#FF5C1A" stroke-width="1"/>
+                <text id="detLabelText" x="0" y="0" font-family="Inter,sans-serif" font-size="13" font-weight="800" fill="#fff" letter-spacing=".5"></text>
+                <text id="detConf" x="0" y="0" font-family="Inter,sans-serif" font-size="12" font-weight="700" fill="#FF5C1A"></text>
+              </g>
+
+              <!-- destinos do alerta -->
+              <g class="dest" id="dest0" transform="translate(650,26)">
+                <circle class="ping" cx="32" cy="32" r="30" fill="none" stroke="#FF5C1A" stroke-width="2"/>
+                <rect class="dest-box" width="64" height="64" rx="16" fill="#161616" stroke="#2A2A2A" stroke-width="1.5"/>
+                <g class="dest-ic" stroke="#9A9A94" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="17" y="19" width="30" height="21" rx="3"/>
+                  <path d="M26 46 h12 M32 40 v6"/>
+                </g>
+                <text x="32" y="84" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" font-weight="600" fill="#8A8A84">Painel</text>
+              </g>
+              <g class="dest" id="dest1" transform="translate(750,26)">
+                <circle class="ping" cx="32" cy="32" r="30" fill="none" stroke="#FF5C1A" stroke-width="2"/>
+                <rect class="dest-box" width="64" height="64" rx="16" fill="#161616" stroke="#2A2A2A" stroke-width="1.5"/>
+                <g class="dest-ic" stroke="#9A9A94" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="24" y="15" width="16" height="32" rx="4"/>
+                  <path d="M30 42 h4"/>
+                </g>
+                <circle cx="42" cy="17" r="5" fill="#FF5C1A" stroke="none"/>
+                <text x="32" y="84" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" font-weight="600" fill="#8A8A84">Push</text>
+              </g>
+              <g class="dest" id="dest2" transform="translate(850,26)">
+                <circle class="ping" cx="32" cy="32" r="30" fill="none" stroke="#FF5C1A" stroke-width="2"/>
+                <rect class="dest-box" width="64" height="64" rx="16" fill="#161616" stroke="#2A2A2A" stroke-width="1.5"/>
+                <g class="dest-ic" stroke="#9A9A94" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M45 31 a13 13 0 0 1 -19 11.5 L19 45 l2.6 -6.8 A13 13 0 1 1 45 31 z"/>
+                  <path d="M26 30 h.01 M32 30 h.01 M38 30 h.01" stroke-width="2.6"/>
+                </g>
+                <text x="32" y="84" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" font-weight="600" fill="#8A8A84">WhatsApp</text>
+              </g>
+
+              <!-- pulsos do fluxo -->
+              <circle class="pulse" id="pulse0" r="4.5" fill="#FF5C1A" filter="url(#softGlow)">
+                <animateMotion id="am0" dur="0.85s" begin="indefinite" fill="freeze"><mpath href="#flow0" xlink:href="#flow0"/></animateMotion>
+              </circle>
+              <circle class="pulse" id="pulse1" r="4.5" fill="#FF5C1A" filter="url(#softGlow)">
+                <animateMotion id="am1" dur="0.85s" begin="indefinite" fill="freeze"><mpath href="#flow1" xlink:href="#flow1"/></animateMotion>
+              </circle>
+              <circle class="pulse" id="pulse2" r="4.5" fill="#FF5C1A" filter="url(#softGlow)">
+                <animateMotion id="am2" dur="0.85s" begin="indefinite" fill="freeze"><mpath href="#flow2" xlink:href="#flow2"/></animateMotion>
+              </circle>
+
+              <!-- flash do print -->
+              <rect id="iaFlash" x="0" y="0" width="960" height="460" fill="#fff"/>
+            </svg>
+
+            <!-- notificação WhatsApp chegando -->
+            <div class="wa-toast" id="waToast" aria-live="polite">
+              <div class="wa-ico">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="#fff" aria-hidden="true">
+                  <path d="M17.47 14.38c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.3-.77.97-.94 1.17-.17.2-.35.22-.64.07-.3-.15-1.26-.47-2.4-1.48-.88-.79-1.48-1.76-1.65-2.06-.17-.3-.02-.46.13-.61.13-.13.3-.35.44-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.02-.52-.08-.15-.67-1.62-.92-2.21-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.52.07-.79.37-.27.3-1.04 1.02-1.04 2.49s1.07 2.89 1.22 3.09c.15.2 2.1 3.2 5.08 4.49.71.3 1.26.49 1.69.62.71.23 1.36.2 1.87.12.57-.09 1.76-.72 2-1.41.25-.7.25-1.29.18-1.41-.08-.13-.28-.2-.57-.35zM12.04 21.79h-.01a9.87 9.87 0 0 1-5.03-1.38l-.36-.21-3.73.98 1-3.65-.24-.37a9.83 9.83 0 0 1-1.51-5.26c0-5.44 4.43-9.87 9.89-9.87a9.8 9.8 0 0 1 6.99 2.9 9.82 9.82 0 0 1 2.89 6.98c0 5.45-4.43 9.88-9.89 9.88zm8.41-18.28A11.8 11.8 0 0 0 12.04 0C5.5 0 .17 5.33.17 11.89c0 2.1.55 4.14 1.58 5.94L.07 24l6.3-1.65a11.87 11.87 0 0 0 5.66 1.44h.01c6.54 0 11.87-5.33 11.87-11.89 0-3.18-1.23-6.16-3.46-8.39z"/>
+                </svg>
+              </div>
+              <div class="wa-body">
+                <div class="wa-top"><strong>Corexia Alertas</strong><span>agora</span></div>
+                <div class="wa-text" id="waText"><b>Arma de fogo detectada</b> · Totem Av. Principal, 154</div>
+                <div class="wa-attach">📷 print-da-cena.jpg</div>
+              </div>
+            </div>
+          </div>
+          <div class="ia-console"><span id="iaConsoleText">Sistema Corexia online. Aguardando eventos...</span><span class="ia-cursor"></span></div>
+        </div>
+
+        <div class="ia-grid">
+          <div class="ia-card reveal" data-d="1">
+            <div class="ia-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h18v4h-8l-1.5 6H7l1.5-6H5v2H2z"/><path d="M20 8V6"/></svg>
+            </div>
+            <h3>Arma de fogo</h3>
+            <p>Identifica arma de fogo em via pública e dispara alerta urgente com print da cena na hora.</p>
+            <div class="ia-toggle-row">
+              <span class="ia-status">Ativada</span>
+              <label class="switch"><input type="checkbox" checked class="ia-switch"><span class="slider"></span></label>
+            </div>
+          </div>
+          <div class="ia-card reveal" data-d="2">
+            <div class="ia-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 3L5 17"/><path d="M5 17l-2 4 4-2"/><path d="M19 3c1 1 1 3-1 5l-3 3-4-4 3-3c2-2 4-2 5-1z"/></svg>
+            </div>
+            <h3>Arma branca</h3>
+            <p>Detecta faca e objeto cortante em situação de ameaça, mesmo em cena com movimento e baixa luz.</p>
+            <div class="ia-toggle-row">
+              <span class="ia-status">Ativada</span>
+              <label class="switch"><input type="checkbox" checked class="ia-switch"><span class="slider"></span></label>
+            </div>
+          </div>
+          <div class="ia-card reveal" data-d="3">
+            <div class="ia-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 18a4 4 0 100-8 5 5 0 00-9.6-1.6A4.2 4.2 0 003 12.6 4.4 4.4 0 007.4 18z"/><path d="M8 22c.5-1 .5-2 0-3M12 22c.5-1 .5-2 0-3M16 22c.5-1 .5-2 0-3"/></svg>
+            </div>
+            <h3>Fumaça</h3>
+            <p>Reconhece fumaça no ambiente antes de o fogo se alastrar, dando tempo de agir antes que vire prejuízo.</p>
+            <div class="ia-toggle-row">
+              <span class="ia-status">Ativada</span>
+              <label class="switch"><input type="checkbox" checked class="ia-switch"><span class="slider"></span></label>
+            </div>
+          </div>
+          <div class="ia-card reveal" data-d="4">
+            <div class="ia-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c4 0 7-3 7-7 0-3-2-5.5-3.5-7C14 6.5 13 4.5 13 2c-3 2-5 5-5 8-1-.5-2-1.5-2.5-3C4 9 4.5 12.5 5 15c.7 4 3.5 7 7 7z"/></svg>
+            </div>
+            <h3>Fogo</h3>
+            <p>Detecta foco de incêndio em tempo real, de dia ou de noite, e aciona todos os canais de alerta.</p>
+            <div class="ia-toggle-row">
+              <span class="ia-status">Ativada</span>
+              <label class="switch"><input type="checkbox" checked class="ia-switch"><span class="slider"></span></label>
+            </div>
+          </div>
+          <div class="ia-card reveal" data-d="4">
+            <div class="ia-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="5" r="2"/><path d="M11 22l1.5-6L10 14l1-5 3 2 3 1"/><path d="M8 22l2-8"/><path d="M11 9l-3 1-1.5 3"/></svg>
+            </div>
+            <h3>Movimento</h3>
+            <p>Monitora movimento em áreas e horários que você define, ideal para madrugada e zonas críticas.</p>
+            <div class="ia-toggle-row">
+              <span class="ia-status">Ativada</span>
+              <label class="switch"><input type="checkbox" checked class="ia-switch"><span class="slider"></span></label>
+            </div>
+          </div>
+        </div>
+        <div class="center reveal" style="margin-top:34px">
+          <span class="ia-note">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33h0a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51h0a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v0a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+            Tudo configurável em tempo real, direto no painel do seu provedor
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 6. SISTEMA DE ALERTAS (branco) ===================== -->
+    <section class="sec light" id="alertas">
+      <div class="container">
+        <div class="section-head center reveal">
+          <span class="eyebrow" style="justify-content:center">Sistema de alertas</span>
+          <h2>Da detecção ao WhatsApp em segundos</h2>
+          <p class="section-sub">Quando a IA detecta, ninguém precisa estar olhando a tela. O alerta chega até quem precisa saber, em todos os canais ao mesmo tempo.</p>
+        </div>
+
+        <div class="alert-flow">
+          <div class="flow-item reveal" data-d="1">
+            <div class="flow-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/></svg>
+            </div>
+            <h3>Detecção</h3>
+            <p>A IA identifica a ocorrência na imagem da câmera</p>
+          </div>
+          <div class="flow-item reveal" data-d="1">
+            <div class="flow-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7l1.5-3h5L16 7"/><circle cx="12" cy="13" r="3.5"/></svg>
+            </div>
+            <h3>Print automático</h3>
+            <p>Captura da cena salva como evidência da ocorrência</p>
+          </div>
+          <div class="flow-item reveal" data-d="2">
+            <div class="flow-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M12 8v3M12 13.5v.5"/></svg>
+            </div>
+            <h3>Painel pisca + som</h3>
+            <p>Alerta visual e sonoro na operação do provedor</p>
+          </div>
+          <div class="flow-item reveal" data-d="2">
+            <div class="flow-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M14 6.5l3-3M17 6.5l-3-3" opacity="0"/><path d="M11 18.5h2"/><path d="M15.5 5.5C17 6 18 7 18.5 8.5" transform="translate(1,-3)"/></svg>
+            </div>
+            <h3>Push no celular</h3>
+            <p>Notificação no app, na mão do assinante e da equipe</p>
+          </div>
+          <div class="flow-item reveal" data-d="3">
+            <div class="flow-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 01-12.4 7.5L3 21l2-5.6A8.5 8.5 0 1121 11.5z"/><path d="M9 10h.01M12.5 10h.01M16 10h.01"/></svg>
+            </div>
+            <h3>Mensagem no WhatsApp</h3>
+            <p>A ocorrência chega direto na conversa, com contexto</p>
+          </div>
+        </div>
+
+        <div class="mockup-wrap reveal">
+          <div class="mockup-head">
+            <h3>Painel do provedor + app do assinante</h3>
+            <p>Operação white-label completa: dashboard com câmeras ao vivo, mapa, eventos e alertas, mais o app no celular do cliente final.</p>
+          </div>
+          <img src="/lp-assets/mockup-app.png" alt="Painel Corexia no desktop com câmeras ao vivo e alertas, ao lado do app mobile exibindo alerta urgente de arma de fogo detectada" loading="lazy">
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 7. MODELO DE NEGÓCIO (preto) ===================== -->
+    <section class="sec" id="modelo">
+      <div class="orb" style="width:460px;height:460px;top:-120px;left:-140px;animation-delay:-4s"></div>
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="eyebrow">Modelo de negócio</span>
+          <h2>O que o seu provedor ganha com isso</h2>
+          <p class="section-sub">Banda larga virou commodity: a briga é por preço. Segurança é o serviço que muda a conversa com o assinante, e a Corexia entrega a estrutura pronta.</p>
+        </div>
+        <div class="biz-grid">
+          <article class="biz-card reveal" data-d="1">
+            <span class="biz-tag">Receita</span>
+            <h3>Nova receita recorrente</h3>
+            <p>Você revende o monitoramento como serviço adicional na mensalidade dos seus assinantes.</p>
+            <ul>
+              <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> Cada assinante que ativa é receita nova entrando todo mês</li>
+              <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> Sem investir em infraestrutura própria de segurança</li>
+              <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> Ticket médio maior na mesma base de clientes</li>
+            </ul>
+          </article>
+          <article class="biz-card reveal" data-d="2">
+            <span class="biz-tag">Posicionamento</span>
+            <h3>Diferencial contra concorrentes</h3>
+            <p>Enquanto o concorrente vende só velocidade, você vende internet + segurança da cidade.</p>
+            <ul>
+              <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> Argumento de venda que fecha contrato novo</li>
+              <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> Totens na rua com a sua marca, visíveis o dia todo</li>
+              <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> Prefeituras, comércio e condomínios como novos mercados</li>
+            </ul>
+          </article>
+          <article class="biz-card reveal" data-d="3">
+            <span class="biz-tag">Retenção</span>
+            <h3>Assinante que não cancela</h3>
+            <p>Cliente que usa o seu app para a segurança da família não troca de provedor por diferença de preço.</p>
+            <ul>
+              <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> Serviço de valor percebido alto no dia a dia</li>
+              <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> Menos churn, mais tempo de vida por cliente</li>
+              <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> Sua marca associada à proteção da cidade</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 8. PRESENÇA REAL / TOTENS (bg imagem) ===================== -->
+    <section class="totem-sec" id="totens">
+      <div class="totem-top-fade"></div>
+      <div class="container">
+        <div class="totem-inner">
+          <span class="eyebrow reveal">Presença real</span>
+          <h2 class="reveal" data-d="1">Totens nas ruas. Sua marca protegendo a cidade.</h2>
+          <p class="section-sub reveal" data-d="1" style="color:#C9C8C2">O totem Corexia não é só câmera: é um ponto de presença física do seu provedor, funcionando como mídia permanente e prova visível de que a cidade está monitorada.</p>
+          <ul class="check-list reveal" data-d="2">
+            <li><span class="chk"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span> Câmeras de alta resolução com visão em todas as direções</li>
+            <li><span class="chk"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span> Alerta visual e sonoro no próprio totem inibe ocorrências</li>
+            <li><span class="chk"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span> Operação e controle 24/7 pelo painel do provedor</li>
+            <li><span class="chk"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span> Estrutura robusta, feita para operar na rua o ano inteiro</li>
+          </ul>
+          <div class="totem-media-note reveal" data-d="3">
+            <strong>O totem também é mídia:</strong> QR code para baixar o app, sua marca em destaque e a mensagem de cidade conectada, trabalhando pelo seu comercial 24 horas por dia.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 9. QUEM CONFIA (branco) ===================== -->
+    <section class="sec light" id="clientes">
+      <div class="container">
+        <div class="section-head center reveal">
+          <span class="eyebrow" style="justify-content:center">Quem confia</span>
+          <h2>A Viggia já leva a Corexia para as ruas</h2>
+          <p class="section-sub">Totens reais em operação, com câmeras, monitoramento inteligente e a marca da Viggia presente na cidade. Veja de perto.</p>
+        </div>
+        <div class="case-grid">
+          <div class="case-card reveal" data-d="1">
+            <img class="case-photo" src="/lp-assets/viggia-totem.jpg" width="337" height="1024" alt="Totem da Viggia instalado na calçada, com câmeras no topo e a marca Viggia Segurança aplicada no poste" loading="lazy">
+            <div class="case-body">
+              <span class="case-tag">Case real</span>
+              <h3>Viggia Segurança</h3>
+              <p>Parceira Corexia com totens em operação em vias públicas: câmeras de alta resolução no topo, QR code para o app e a marca trabalhando na rua 24 horas por dia.</p>
+              <ul class="case-list">
+                <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> Totens instalados e operando na cidade</li>
+                <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> Monitoramento com câmeras e alertas</li>
+                <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> Marca visível como mídia permanente</li>
+              </ul>
+              <a class="btn btn-ghost case-ig" href="https://www.instagram.com/viggia360/" target="_blank" rel="noopener">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r="1.2" fill="currentColor" stroke="none"/></svg>
+                Ver @viggia360 no Instagram
+              </a>
+            </div>
+          </div>
+          <div class="case-reel reveal" data-d="2">
+            <div class="reel-frame">
+              <video src="/lp-assets/viggia-reel.mp4" poster="/lp-assets/viggia-reel.jpg" controls playsinline loop preload="metadata" aria-label="Vídeo da Viggia apresentando o totem de segurança na rua"></video>
+            </div>
+            <p class="case-reel-cap">Vídeo real dos totens da Viggia nas ruas</p>
+          </div>
+        </div>
+        <div class="case-next reveal">
+          <p><strong>Seu provedor pode ser o próximo case.</strong> Agende uma demonstração e veja o modelo funcionando na prática.</p>
+          <button class="btn btn-primary js-open-form" data-cta="clientes">Agendar demonstração</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 10. CTA FINAL ===================== -->
+    <section class="final-cta">
+      <div class="container">
+        <span class="eyebrow reveal" style="justify-content:center">Próximo passo</span>
+        <h2 class="reveal" data-d="1">Pronto para transformar a segurança e a receita do seu provedor?</h2>
+        <p class="reveal" data-d="2">Agende uma demonstração com nosso comercial: você vê o painel ao vivo, a IA detectando em tempo real e o modelo de receita na prática. Sem compromisso.</p>
+        <div class="final-ctas reveal" data-d="3">
+          <button class="btn btn-primary btn-lg js-open-form" data-cta="cta-final">Agendar demonstração</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===================== 11. FOOTER ===================== -->
+  <footer>
+    <div class="container">
+      <div class="foot-grid">
+        <div class="foot-brand">
+          <img src="/lp-assets/logo-dark-bg.png" alt="Corexia" loading="lazy">
+          <p>Monitoramento inteligente com IA para provedores de internet. Cidade conectada, cidade protegida.</p>
+        </div>
+        <div class="foot-col">
+          <h4>Navegação</h4>
+          <ul>
+            <li><a href="#como-funciona">Como funciona</a></li>
+            <li><a href="#recursos">Recursos</a></li>
+            <li><a href="#alertas">Alertas</a></li>
+            <li><a href="#totens">Totens</a></li>
+            <li><a href="#clientes">Clientes</a></li>
+          </ul>
+        </div>
+        <div class="foot-col">
+          <h4>Contato</h4>
+          <ul>
+            <li><a href="mailto:comercial@corexia.com.br">comercial@corexia.com.br</a></li>
+            <li><a href="#" class="js-open-form" data-cta="footer">Agendar demonstração</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="foot-bottom">
+        <span>© <span id="year"></span> Corexia. Todos os direitos reservados.</span>
+        <span>Feito para provedores que pensam grande.</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ===================== MODAL / FORM GAMIFICADO ===================== -->
+  <div class="modal" id="leadModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-card">
+      <canvas id="confettiCanvas"></canvas>
+      <button class="modal-close" data-close aria-label="Fechar">✕</button>
+
+      <div id="formArea">
+        <div class="progress-wrap">
+          <div class="progress-meta">
+            <span id="stepLabel">Passo <strong>1</strong> de 5</span>
+            <span id="stepPct">0%</span>
+          </div>
+          <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+        </div>
+
+        <form id="leadForm" novalidate>
+          <!-- STEP 1 -->
+          <div class="form-step active" data-step="0">
+            <label for="fName" id="modalTitle">Qual seu nome?</label>
+            <span class="hint">Vamos direto ao ponto: leva menos de 30 segundos.</span>
+            <input type="text" id="fName" name="nome" placeholder="Seu nome" autocomplete="name" maxlength="80">
+            <div class="form-error" id="errName">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+              <span>Opa, precisamos do seu nome pra continuar.</span>
+            </div>
+            <div class="form-nav">
+              <button type="button" class="btn btn-primary" data-next>Continuar</button>
+            </div>
+          </div>
+
+          <!-- STEP 2 -->
+          <div class="form-step" data-step="1">
+            <label for="fProvider">Qual o nome do seu provedor?</label>
+            <span class="hint">O nome da empresa que vai virar referência de segurança na cidade.</span>
+            <input type="text" id="fProvider" name="provedor" placeholder="Ex.: NetFibra Telecom" autocomplete="organization" maxlength="100">
+            <div class="form-error" id="errProvider">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+              <span>Conta pra gente o nome do provedor.</span>
+            </div>
+            <div class="form-nav">
+              <button type="button" class="btn btn-back" data-back>Voltar</button>
+              <button type="button" class="btn btn-primary" data-next>Continuar</button>
+            </div>
+          </div>
+
+          <!-- STEP 3 -->
+          <div class="form-step" data-step="2">
+            <label for="fPhone">Qual seu WhatsApp?</label>
+            <span class="hint">É por ele que nosso comercial vai te chamar pra agendar a demonstração.</span>
+            <input type="tel" id="fPhone" name="whatsapp" placeholder="(87) 91234-5678" autocomplete="tel" inputmode="numeric" maxlength="20">
+            <div class="form-error" id="errPhone">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+              <span>Digite um WhatsApp válido com DDD, ex.: (87) 91234-5678.</span>
+            </div>
+            <div class="form-nav">
+              <button type="button" class="btn btn-back" data-back>Voltar</button>
+              <button type="button" class="btn btn-primary" data-next>Continuar</button>
+            </div>
+          </div>
+
+          <!-- STEP 4 -->
+          <div class="form-step" data-step="3">
+            <label for="fCity">Em qual cidade fica a base do seu provedor?</label>
+            <span class="hint">A cidade-base da sua operação. Pode digitar livremente.</span>
+            <input type="text" id="fCity" name="cidade" placeholder="Ex.: Petrolina - PE" list="cityList" autocomplete="off" maxlength="80">
+            <datalist id="cityList">
+              <option value="São Paulo - SP"><option value="Rio de Janeiro - RJ"><option value="Belo Horizonte - MG">
+              <option value="Brasília - DF"><option value="Salvador - BA"><option value="Fortaleza - CE">
+              <option value="Recife - PE"><option value="Curitiba - PR"><option value="Porto Alegre - RS">
+              <option value="Manaus - AM"><option value="Belém - PA"><option value="Goiânia - GO">
+              <option value="Guarulhos - SP"><option value="Campinas - SP"><option value="São Luís - MA">
+              <option value="Maceió - AL"><option value="Natal - RN"><option value="Campo Grande - MS">
+              <option value="Teresina - PI"><option value="João Pessoa - PB"><option value="Aracaju - SE">
+              <option value="Cuiabá - MT"><option value="Florianópolis - SC"><option value="Vitória - ES">
+              <option value="Petrolina - PE"><option value="Caruaru - PE"><option value="Garanhuns - PE">
+              <option value="Juazeiro - BA"><option value="Feira de Santana - BA"><option value="Vitória da Conquista - BA">
+              <option value="Campina Grande - PB"><option value="Mossoró - RN"><option value="Arapiraca - AL">
+              <option value="Sobral - CE"><option value="Juazeiro do Norte - CE"><option value="Parnaíba - PI">
+              <option value="Imperatriz - MA"><option value="Marabá - PA"><option value="Santarém - PA">
+              <option value="Palmas - TO"><option value="Porto Velho - RO"><option value="Rio Branco - AC">
+              <option value="Boa Vista - RR"><option value="Macapá - AP"><option value="Uberlândia - MG">
+              <option value="Ribeirão Preto - SP"><option value="Sorocaba - SP"><option value="Londrina - PR">
+              <option value="Maringá - PR"><option value="Joinville - SC"><option value="Caxias do Sul - RS">
+              <option value="Niterói - RJ"><option value="Serra - ES"><option value="Anápolis - GO">
+              <option value="Dourados - MS">
+            </datalist>
+            <div class="form-error" id="errCity">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+              <span>Precisamos saber a cidade da sua operação.</span>
+            </div>
+            <div class="form-nav">
+              <button type="button" class="btn btn-back" data-back>Voltar</button>
+              <button type="button" class="btn btn-primary" data-next>Continuar</button>
+            </div>
+          </div>
+
+          <!-- STEP 5 -->
+          <div class="form-step" data-step="4">
+            <label>Em que momento o seu provedor está?</label>
+            <span class="hint">Clique na opção que mais combina com o seu provedor hoje e fechamos por aqui.</span>
+            <input type="hidden" id="fMomento" name="momento">
+            <div class="choice-grid">
+              <button type="button" class="choice-card" data-momento="Começando a crescer">
+                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22V9"/><path d="M12 9C12 5 9 3 5 3c0 4 3 6 7 6z"/><path d="M12 13c0-3.5 2.5-5.5 6.5-5.5 0 3.5-2.5 5.5-6.5 5.5z"/></svg>
+                <strong>Começando a crescer</strong>
+                <span>Base em construção, foco em conquistar mercado</span>
+              </button>
+              <button type="button" class="choice-card" data-momento="Crescendo rápido">
+                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>
+                <strong>Crescendo rápido</strong>
+                <span>Expansão acelerada de assinantes e cidades</span>
+              </button>
+              <button type="button" class="choice-card" data-momento="Consolidado na região">
+                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg>
+                <strong>Consolidado na região</strong>
+                <span>Marca forte, foco em retenção e novas receitas</span>
+              </button>
+            </div>
+            <div class="form-error" id="errMomento">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+              <span>Escolha uma das opções pra fechar.</span>
+            </div>
+            <div class="form-nav">
+              <button type="button" class="btn btn-back" data-back>Voltar</button>
+            </div>
+          </div>
+        </form>
+        <p class="enter-tip">Dica: pressione <kbd>Enter</kbd> para avançar</p>
+      </div>
+
+      <!-- SUCCESS -->
+      <div class="form-success" id="formSuccess">
+        <svg class="check-anim" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="46"/>
+          <path d="M30 52l14 13 26-30"/>
+        </svg>
+        <h3 id="successTitle">Fechou! 🎉</h3>
+        <p>Nosso comercial vai te chamar no WhatsApp pra marcar a demonstração. Fica de olho na notificação!</p>
+        <div class="form-nav" style="justify-content:center;margin-top:28px">
+          <button type="button" class="btn btn-ghost" data-close style="flex:none;padding:13px 34px">Fechar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* =========================================================
+       Corexia LP: JS puro, sem dependências
+       ========================================================= */
+
+    // ---------- Analytics / tracking (painel /admin) ----------
+    // A LP continua funcionando normalmente se o backend não estiver no ar.
+    const CX_SID = (() => {
+      let sid = sessionStorage.getItem('cx_sid');
+      if (!sid) {
+        sid = (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2));
+        sessionStorage.setItem('cx_sid', sid);
+      }
+      return sid;
+    })();
+    function track(type, label) {
+      try {
+        const body = JSON.stringify({ type, label: label || null, session_id: CX_SID });
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon('/api/lp/track', new Blob([body], { type: 'application/json' }));
+        } else {
+          fetch('/api/lp/track', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true }).catch(() => {});
+        }
+      } catch (e) { /* sem backend, sem problema */ }
+    }
+    track('pageview');
+    document.querySelectorAll('[data-cta]').forEach(el =>
+      el.addEventListener('click', () => track('cta_click', el.dataset.cta))
+    );
+
+    // ---------- Navbar ----------
+    const nav = document.getElementById('nav');
+    const hamburger = document.getElementById('hamburger');
+    addEventListener('scroll', () => nav.classList.toggle('scrolled', scrollY > 24), { passive: true });
+    nav.classList.toggle('scrolled', scrollY > 24);
+    hamburger.addEventListener('click', () => nav.classList.toggle('open'));
+    document.querySelectorAll('.nav-links a').forEach(a =>
+      a.addEventListener('click', () => nav.classList.remove('open'))
+    );
+
+    // ---------- Ano no footer ----------
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    // ---------- Reveal on scroll ----------
+    const io = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+      });
+    }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+    document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+    // ---------- Toggles da seção IA ----------
+    document.querySelectorAll('.ia-switch').forEach(sw => {
+      sw.addEventListener('change', () => {
+        const card = sw.closest('.ia-card');
+        card.classList.toggle('off', !sw.checked);
+        card.querySelector('.ia-status').textContent = sw.checked ? 'Ativada' : 'Desativada';
+      });
+    });
+
+    // ---------- Simulador da IA (cena animada) ----------
+    (() => {
+      const stage = document.getElementById('iaStage');
+      if (!stage) return;
+      const THREATS = {
+        'arma-fogo':   { label: 'ARMA DE FOGO', conf: '98%', box: [458, 214, 122, 168], msg: 'Arma de fogo detectada' },
+        'arma-branca': { label: 'ARMA BRANCA',  conf: '96%', box: [458, 214, 122, 168], msg: 'Arma branca detectada' },
+        'movimento':   { label: 'MOVIMENTO',    conf: '95%', box: [430, 205, 150, 180], msg: 'Movimento suspeito detectado' },
+        'fogo':        { label: 'FOGO',         conf: '99%', box: [636, 262, 232, 108], msg: 'Foco de fogo detectado' },
+        'fumaca':      { label: 'FUMAÇA',       conf: '97%', box: [700, 172, 90, 92],   msg: 'Fumaça detectada' }
+      };
+      const ORDER = ['arma-fogo', 'fumaca', 'movimento', 'fogo', 'arma-branca'];
+      const $id = id => document.getElementById(id);
+      const detGroup = $id('detGroup'), detRect = $id('detRect'), detCorners = $id('detCorners');
+      const detLabelBg = $id('detLabelBg'), detLabelText = $id('detLabelText'), detConf = $id('detConf');
+      const dests = [$id('dest0'), $id('dest1'), $id('dest2')];
+      const pulses = [$id('pulse0'), $id('pulse1'), $id('pulse2')];
+      const motions = [$id('am0'), $id('am1'), $id('am2')];
+      const chips = [...document.querySelectorAll('.ia-chip')];
+      const waToast = $id('waToast'), waText = $id('waText');
+      const timers = [];
+      let idx = 0, lastInteract = 0, lastPlay = 0, inView = false;
+
+      const later = (fn, ms) => timers.push(setTimeout(fn, ms));
+      const bracket = (x, y, w, h, l) =>
+        `M${x} ${y + l} V${y} H${x + l} M${x + w - l} ${y} H${x + w} V${y + l} ` +
+        `M${x + w} ${y + h - l} V${y + h} H${x + w - l} M${x + l} ${y + h} H${x} V${y + h - l}`;
+
+      function setConsole(msg) {
+        const t = new Date().toLocaleTimeString('pt-BR');
+        $id('iaConsoleText').innerHTML = `<span class="t">[${t}]</span> ${msg}`;
+      }
+
+      function posiciona(key) {
+        const t = THREATS[key];
+        const [x, y, w, h] = t.box;
+        detRect.setAttribute('x', x); detRect.setAttribute('y', y);
+        detRect.setAttribute('width', w); detRect.setAttribute('height', h);
+        detCorners.setAttribute('d', bracket(x, y, w, h, 15));
+        detLabelText.textContent = t.label;
+        detConf.textContent = t.conf;
+        const tw = detLabelText.getComputedTextLength();
+        const cw = detConf.getComputedTextLength();
+        const bw = 12 + tw + 10 + cw + 12;
+        const ly = y > 42 ? y - 36 : y + h + 10;
+        const lx = Math.min(x, 946 - bw);
+        detLabelBg.setAttribute('x', lx); detLabelBg.setAttribute('y', ly);
+        detLabelBg.setAttribute('width', bw);
+        detLabelText.setAttribute('x', lx + 12); detLabelText.setAttribute('y', ly + 18);
+        detConf.setAttribute('x', lx + 12 + tw + 10); detConf.setAttribute('y', ly + 18);
+      }
+
+      function play(key) {
+        const t = THREATS[key];
+        if (!t) return;
+        lastPlay = Date.now();
+        timers.forEach(clearTimeout); timers.length = 0;
+        stage.classList.remove('alerting');
+        waToast.classList.remove('show');
+        dests.forEach(d => d.classList.remove('hit'));
+        pulses.forEach(p => p.style.opacity = 0);
+        chips.forEach(c => c.classList.toggle('active', c.dataset.threat === key));
+        stage.dataset.threat = key;
+        setConsole('Analisando cena em tempo real...');
+        posiciona(key);
+        detGroup.classList.remove('lock');
+        void detGroup.getBoundingClientRect(); // reinicia a animação
+        later(() => detGroup.classList.add('lock'), 260);
+
+        // print + sirene
+        later(() => {
+          const f = $id('iaFlash');
+          f.classList.remove('go'); void f.getBoundingClientRect(); f.classList.add('go');
+          stage.classList.add('alerting');
+          setConsole(`${t.msg}. Print capturado, enviando alerta: painel, push e WhatsApp...`);
+        }, 950);
+
+        // pulsos viajando até os destinos
+        [0, 1, 2].forEach(i => later(() => {
+          pulses[i].style.opacity = 1;
+          motions[i].beginElement();
+          later(() => {
+            pulses[i].style.opacity = 0;
+            dests[i].classList.add('hit');
+            later(() => dests[i].classList.remove('hit'), 900);
+          }, 860);
+        }, 1150 + i * 280));
+
+        // notificação WhatsApp chegando
+        later(() => {
+          waText.innerHTML = `<b>${t.msg}</b> · Totem Av. Principal, 154`;
+          waToast.classList.add('show');
+          setConsole(`${t.msg}. Alerta entregue no painel, no app e no WhatsApp.`);
+        }, 2850);
+        later(() => {
+          waToast.classList.remove('show');
+          stage.classList.remove('alerting');
+        }, 5700);
+      }
+
+      chips.forEach(c => c.addEventListener('click', () => {
+        lastInteract = Date.now();
+        play(c.dataset.threat);
+      }));
+
+      const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      new IntersectionObserver(en => { inView = en[0].isIntersecting; }, { threshold: .3 }).observe(stage);
+      if (!reduced) {
+        const kick = new IntersectionObserver(en => {
+          if (en[0].isIntersecting) { play(ORDER[idx++ % ORDER.length]); kick.disconnect(); }
+        }, { threshold: .3 });
+        kick.observe(stage);
+        setInterval(() => {
+          if (!inView) return;
+          if (Date.now() - lastInteract < 9000) return;
+          if (Date.now() - lastPlay < 6000) return; // deixa a sequência atual terminar
+          play(ORDER[idx++ % ORDER.length]);
+        }, 6600);
+      } else {
+        // estado estático para quem prefere menos movimento
+        stage.dataset.threat = 'arma-fogo';
+        posiciona('arma-fogo');
+        chips.forEach(c => c.classList.toggle('active', c.dataset.threat === 'arma-fogo'));
+        detGroup.style.opacity = 1;
+        setConsole('Arma de fogo detectada. Print capturado, alerta enviado: painel, push e WhatsApp.');
+      }
+    })();
+
+    // ---------- Modal ----------
+    const modal = document.getElementById('leadModal');
+    const formArea = document.getElementById('formArea');
+    const formSuccess = document.getElementById('formSuccess');
+
+    function openModal(e) {
+      if (e) e.preventDefault();
+      nav.classList.remove('open');
+      modal.classList.add('active');
+      document.body.style.overflow = 'hidden';
+      track('form_open');
+      goToStep(0, true);
+      formArea.style.display = '';
+      formSuccess.classList.remove('active');
+      setTimeout(() => steps[0].querySelector('input').focus(), 120);
+    }
+    function closeModal() {
+      modal.classList.remove('active');
+      document.body.style.overflow = '';
+    }
+    document.querySelectorAll('.js-open-form').forEach(b => b.addEventListener('click', openModal));
+    modal.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeModal));
+    addEventListener('keydown', e => { if (e.key === 'Escape' && modal.classList.contains('active')) closeModal(); });
+
+    // ---------- Multi-step ----------
+    const form = document.getElementById('leadForm');
+    const steps = [...form.querySelectorAll('.form-step')];
+    const progressFill = document.getElementById('progressFill');
+    const stepLabel = document.getElementById('stepLabel');
+    const stepPct = document.getElementById('stepPct');
+    let current = 0;
+    let submitTimer = null;   // agendamento do envio pelo card do step 5
+    let submitted = false;    // trava contra envio duplicado
+    const submitForm = () => form.requestSubmit
+      ? form.requestSubmit()
+      : form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+
+    function goToStep(i, reset) {
+      if (reset) {
+        form.reset();
+        hideErrors();
+        form.querySelectorAll('.choice-card').forEach(c => c.classList.remove('selected'));
+        clearTimeout(submitTimer);
+        submitted = false;
+      }
+      current = i;
+      steps.forEach((s, idx) => s.classList.toggle('active', idx === i));
+      const pct = Math.round((i / steps.length) * 100);
+      progressFill.style.width = pct + '%';
+      stepLabel.innerHTML = `Passo <strong>${i + 1}</strong> de ${steps.length}`;
+      stepPct.textContent = pct + '%';
+      const inp = steps[i].querySelector('input:not([type="hidden"])');
+      if (inp) setTimeout(() => inp.focus(), 80);
+      track('step_reached', String(i + 1));
+    }
+    function hideErrors() {
+      form.querySelectorAll('.form-error').forEach(e => e.classList.remove('show'));
+    }
+
+    const validators = [
+      () => {
+        const ok = document.getElementById('fName').value.trim().length >= 2;
+        document.getElementById('errName').classList.toggle('show', !ok);
+        return ok;
+      },
+      () => {
+        const ok = document.getElementById('fProvider').value.trim().length >= 2;
+        document.getElementById('errProvider').classList.toggle('show', !ok);
+        return ok;
+      },
+      () => {
+        const digits = document.getElementById('fPhone').value.replace(/\D/g, '');
+        const ok = digits.length === 10 || digits.length === 11;
+        document.getElementById('errPhone').classList.toggle('show', !ok);
+        return ok;
+      },
+      () => {
+        const ok = document.getElementById('fCity').value.trim().length >= 2;
+        document.getElementById('errCity').classList.toggle('show', !ok);
+        return ok;
+      },
+      () => {
+        const ok = !!document.getElementById('fMomento').value;
+        document.getElementById('errMomento').classList.toggle('show', !ok);
+        return ok;
+      }
+    ];
+
+    form.querySelectorAll('[data-next]').forEach(btn =>
+      btn.addEventListener('click', () => { if (validators[current]()) goToStep(current + 1); })
+    );
+    form.querySelectorAll('[data-back]').forEach(btn =>
+      btn.addEventListener('click', () => { clearTimeout(submitTimer); goToStep(current - 1); })
+    );
+
+    // Enter avança; esconde erro ao digitar
+    form.querySelectorAll('input').forEach(inp => {
+      inp.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          if (current < steps.length - 1) {
+            if (validators[current]()) goToStep(current + 1);
+          } else {
+            submitForm();
+          }
+        }
+      });
+      inp.addEventListener('input', hideErrors);
+    });
+
+    // ---------- Máscara de telefone BR ----------
+    const phoneInput = document.getElementById('fPhone');
+    phoneInput.addEventListener('input', () => {
+      let d = phoneInput.value.replace(/\D/g, '');
+      if (d.length > 11 && d.startsWith('55')) d = d.slice(2); // remove código do país colado
+      d = d.slice(0, 11);
+      let out = '';
+      if (d.length > 0) out = '(' + d.slice(0, 2);
+      if (d.length >= 3) out += ') ';
+      if (d.length === 11) out += d.slice(2, 7) + '-' + d.slice(7);
+      else if (d.length > 6) out += d.slice(2, 6) + '-' + d.slice(6);
+      else if (d.length > 2) out += d.slice(2);
+      phoneInput.value = out;
+    });
+
+    // ---------- Cards do step 5 (momento): 1 clique seleciona e envia ----------
+    form.querySelectorAll('.choice-card').forEach(card => {
+      card.addEventListener('click', () => {
+        clearTimeout(submitTimer);
+        form.querySelectorAll('.choice-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        document.getElementById('fMomento').value = card.dataset.momento;
+        document.getElementById('errMomento').classList.remove('show');
+        submitTimer = setTimeout(() => submitForm(), 380); // micro-pausa pra ver a seleção
+      });
+    });
+
+    // ---------- Submit ----------
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      if (submitted) return;
+      if (!validators[4]()) return;
+      submitted = true;
+      const data = {
+        nome: document.getElementById('fName').value.trim(),
+        provedor: document.getElementById('fProvider').value.trim(),
+        whatsapp: document.getElementById('fPhone').value.trim(),
+        cidade: document.getElementById('fCity').value.trim(),
+        momento: document.getElementById('fMomento').value,
+        origem: 'lp-corexia',
+        data: new Date().toISOString()
+      };
+      sendLead(data);
+      track('form_complete');
+      // celebração
+      progressFill.style.width = '100%';
+      stepPct.textContent = '100%';
+      document.getElementById('successTitle').textContent = `Fechou, ${data.nome.split(' ')[0]}! 🎉`;
+      setTimeout(() => {
+        formArea.style.display = 'none';
+        formSuccess.classList.add('active');
+        launchConfetti();
+      }, 350);
+    });
+
+    /* =========================================================
+       sendLead: configure o destino do lead aqui
+       ========================================================= */
+    function sendLead(data) {
+      console.log('[Corexia] Novo lead capturado:', data);
+
+      // Salva o lead no banco local do servidor (alimenta o painel /admin):
+      fetch('/api/lp/lead', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...data, session_id: CX_SID })
+      }).catch(err => console.warn('[Corexia] Backend local indisponível:', err));
+
+      // (a) POST para webhook (n8n, Make, Zapier, CRM). Descomente e configure:
+      // fetch('https://SEU-WEBHOOK-AQUI.com/lead', {
+      //   method: 'POST',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify(data)
+      // }).catch(err => console.error('[Corexia] Falha ao enviar lead:', err));
+
+      // (b) Redirect para o WhatsApp comercial com mensagem pré-preenchida. Descomente e configure o número:
+      // const msg = encodeURIComponent(
+      //   `Olá! Sou ${data.nome}, do provedor ${data.provedor} (${data.cidade}). ` +
+      //   `Momento do provedor: ${data.momento}. ` +
+      //   `Quero agendar uma demonstração da Corexia. Meu WhatsApp: ${data.whatsapp}`
+      // );
+      // window.open(`https://wa.me/55SEUNUMEROAQUI?text=${msg}`, '_blank');
+    }
+
+    // ---------- Confetti (canvas, sem libs) ----------
+    function launchConfetti() {
+      const canvas = document.getElementById('confettiCanvas');
+      const card = canvas.parentElement;
+      canvas.width = card.offsetWidth;
+      canvas.height = card.offsetHeight;
+      const ctx = canvas.getContext('2d');
+      const colors = ['#FF5C1A', '#FF8A50', '#FFC29E', '#FFFFFF', '#FFD166'];
+      const parts = Array.from({ length: 90 }, () => ({
+        x: canvas.width / 2 + (Math.random() - 0.5) * 80,
+        y: canvas.height * 0.35,
+        vx: (Math.random() - 0.5) * 9,
+        vy: -Math.random() * 9 - 3,
+        size: Math.random() * 7 + 4,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        rot: Math.random() * Math.PI,
+        vr: (Math.random() - 0.5) * 0.3,
+        shape: Math.random() > 0.5 ? 'rect' : 'circle'
+      }));
+      const start = performance.now();
+      (function frame(now) {
+        const t = now - start;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        parts.forEach(p => {
+          p.vy += 0.22; p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate(p.rot);
+          ctx.globalAlpha = Math.max(0, 1 - t / 2600);
+          ctx.fillStyle = p.color;
+          if (p.shape === 'rect') ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
+          else { ctx.beginPath(); ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2); ctx.fill(); }
+          ctx.restore();
+        });
+        if (t < 2600) requestAnimationFrame(frame);
+        else ctx.clearRect(0, 0, canvas.width, canvas.height);
+      })(start);
+    }
+  </script>
+</body>
+</html>
