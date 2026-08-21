@@ -133,6 +133,8 @@ EXTRA_MODELS   = [m for m in [MODEL_ID_FIRE, MODEL_ID_PLATE, MODEL_ID_KNIFE] if 
 # do _process descarta toda deteccao de placa (o opt-in real e por camera: cam.ia_placa).
 if MODEL_ID_PLATE and "placa" not in TIPOS_ATIVOS:
     TIPOS_ATIVOS.add("placa")
+if MODEL_ID_EPI and "epi" not in TIPOS_ATIVOS:
+    TIPOS_ATIVOS.add("epi")
     print("[cfg] MODEL_ID_PLATE setado -> 'placa' injetada em TIPOS_ATIVOS (opt-in real = cam.ia_placa)")
 
 # --- detecao de MOVIMENTO (frame-diff, sempre ativa, so no processo pai) ---
@@ -419,6 +421,16 @@ def models_for_cam(cam, now_ts=None):
 
 _EPI_ITEM = {"no_helmet": "sem capacete", "no_glove": "sem luva", "no_goggles": "sem oculos",
              "no_mask": "sem mascara", "no_shoes": "sem calcado"}
+# classe do modelo -> item do catalogo (regra por setor: cam.config_analitico.epi_itens)
+_EPI_CLASSE_ITEM = {"no_helmet": "capacete", "no_glove": "luva", "no_goggles": "oculos",
+                    "no_mask": "mascara", "no_shoes": "botina"}
+def _epi_item_obrigatorio(cam, cls):
+    """True se o item ausente (cls) e OBRIGATORIO nesta camera. Sem lista epi_itens = alerta todos (padrao)."""
+    req = ((cam.get("config_analitico") or {}).get("epi_itens")) or []
+    if not req:
+        return True
+    item = _EPI_CLASSE_ITEM.get(str(cls).lower())
+    return (item in req) if item else True
 _LABEL_TIPO = {"pessoa": "Pessoa detectada", "veiculo": "Veiculo detectado", "animal": "Animal detectado"}
 
 
@@ -765,6 +777,9 @@ def _process(predictions, video_frame):
             continue
         # honra a tela "Analiticos por Camera": sem config / fora do horario -> nao alerta
         if not _tipo_ativo_na_cam(cam, tipo, _agora):
+            continue
+        # EPI por setor: so alerta o item OBRIGATORIO naquela camera (lista epi_itens)
+        if tipo == "epi" and not _epi_item_obrigatorio(cam, cls):
             continue
         # regiao ja rejeitada pelo Gemini (objeto fixo)? nao deixa "roubar" a verificacao
         if _rejeitado_perto(cam.get("id"), tipo, float(p.get("x", 0)), float(p.get("y", 0)), _agora):

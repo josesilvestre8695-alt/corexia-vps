@@ -474,6 +474,7 @@ _PROV_ITENS = [
     ("conciliacao", "Conciliacao", "Conciliação de Carteira"),
     ("cameras", "Cameras e IA", "Cameras e Analiticos"),
     ("gravacoes", "Gravacoes", "Gravacoes em Nuvem"),
+    ("heatmap", "Mapa de Calor", "Mapa de Calor"),
     ("alertas", "Alertas", "Alertas"),
     ("preferencias", "Preferencias", "Preferencias de Alerta"),
     ("plantao", "Plantao", "Plantao (WhatsApp)"),
@@ -1574,6 +1575,8 @@ def prov_equipe_page(req: Request):
 def prov_generico(slug: str, req: Request):
     if slug == "conciliacao":
         return prov_conciliacao_page(req)
+    if slug == "heatmap":
+        return _prov_shell("heatmap", "Mapa de Calor", _HEATMAP_BODY, req)
     titulo = next((t for s, l, t in _PROV_ITENS if s == slug), slug)
     body = ('<div class="center" style="padding:70px"><div style="font-size:18px;color:var(--ink);margin-bottom:8px">%s</div>'
             '<div>Em construcao - proxima entrega.</div></div>' % titulo)
@@ -3769,8 +3772,9 @@ async def cliente_sincronizar(pid: str, req: Request):
 @router.get("/api/comercial/analiticos/cameras")
 def analiticos_cameras(req: Request):
     u = _current_user(req)
-    if not (u and u["role"] == "admin"):
+    if not (u and u["role"] in ("admin", "provedor")):
         return JSONResponse({"error": "sem permissao"}, status_code=403)
+    _pid_scope = (u.get("provedor_id") or "").strip() if u["role"] == "provedor" else None
     c = _db()
     cams = c.execute("SELECT id, data FROM entities WHERE entity='Camera'").fetchall()
     cfgs_rows = c.execute("SELECT id, data FROM entities WHERE entity='ConfigAnalitico'").fetchall()
@@ -3785,6 +3789,8 @@ def analiticos_cameras(req: Request):
     out = []
     for r in cams:
         o = json.loads(r["data"])
+        if _pid_scope and o.get("provedor_id") != _pid_scope:
+            continue
         out.append({"id": r["id"], "nome": o.get("nome", ""), "cliente_nome": o.get("cliente_nome", ""), "embed_url": o.get("embed_url", ""), "stream_url": (o.get("rtsp_url") or o.get("stream_url") or ""), "ia_placa": bool(o.get("ia_placa")),
                     "config": cfgs.get(r["id"])})
     out.sort(key=lambda x: (x["nome"] or "").lower())
@@ -4015,9 +4021,13 @@ async def heatmap_ingest(req: Request):
 @router.get("/api/comercial/heatmap/grid")
 def heatmap_grid(req: Request):
     u = _current_user(req)
-    if not (u and u["role"] == "admin"):
+    if not (u and u["role"] in ("admin", "provedor")):
         return JSONResponse({"error": "sem permissao"}, status_code=403)
     cid = req.query_params.get("camera_id", ""); de = req.query_params.get("de", ""); ate = req.query_params.get("ate", "")
+    if u["role"] == "provedor":
+        _cam = _get_ent("Camera", cid)
+        if not _cam or _cam.get("provedor_id") != (u.get("provedor_id") or "").strip():
+            return JSONResponse({"error": "sem permissao"}, status_code=403)
     c = _db(); rows = c.execute("SELECT data FROM entities WHERE entity='Heatmap'").fetchall(); c.close()
     gw = gh = 0; acc = None; total = 0; nb = 0
     for r in rows:

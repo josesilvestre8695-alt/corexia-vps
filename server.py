@@ -1693,7 +1693,7 @@ async def listar(req: Request):
             if _d.get("camera_id"):
                 cfg_by_cam[_d["camera_id"]] = {"ativo": _d.get("ativo", True),
                     "horarios": _d.get("horarios", []), "analiticos_padrao": _d.get("analiticos_padrao", []),
-                    "zonas_intrusao": _d.get("zonas_intrusao", [])}
+                    "zonas_intrusao": _d.get("zonas_intrusao", []), "epi_itens": _d.get("epi_itens", [])}
         _c.close()
     except Exception as _e:
         print("[listarCamerasIA] cfg analitico:", _e)
