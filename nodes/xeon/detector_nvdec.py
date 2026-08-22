@@ -16,7 +16,7 @@ Env principais:
   NVDEC_FPS=4            fps de amostragem por camera
   WORKER_ID / WORKER_COUNT  sharding (divide a lista entre N workers)
 """
-import os, sys, time, json, glob, subprocess, re
+import os, sys, time, json, glob, subprocess, re, hashlib
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
@@ -232,7 +232,7 @@ def shard(cams):
     """fatia estavel entre workers (por hash do id) — cada camera cai em 1 worker so."""
     if WORKER_COUNT <= 1:
         return cams
-    return [c for c in cams if (hash(str(c["id"])) % WORKER_COUNT) == WORKER_ID]
+    return [c for c in cams if (int(hashlib.md5(str(c["id"]).encode()).hexdigest(), 16) % WORKER_COUNT) == WORKER_ID]
 
 
 # ---------------- runtime por camera ----------------

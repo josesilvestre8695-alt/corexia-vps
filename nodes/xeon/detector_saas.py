@@ -283,7 +283,7 @@ def gemini_balaclava(crop_jpg, nome):
         return False, ""
 
 
-def gemini_piscina(crop_jpg, nome, still_secs=0):
+def gemini_piscina(crop_jpg, nome, still_secs=0, crowd=False):
     """True se ha sinal REAL de afogamento/perigo na area da agua. Fail-closed.
     AUXILIO: nao substitui salva-vidas/vigilancia; sujeito a falso negativo."""
     if not USE_GEMINI or not GEMINI_KEY or not crop_jpg:
@@ -291,12 +291,21 @@ def gemini_piscina(crop_jpg, nome, still_secs=0):
     global _gem_fails, _gem_open_until, _gem_down
     if _gem_open_until and time.time() < _gem_open_until:
         return False, ""
-    ctx = (" A pessoa aparenta estar IMOVEL/parada na agua ha cerca de %d segundos." % int(still_secs)) if still_secs >= 20 else ""
-    prompt = ('Camera de seguranca de uma PISCINA; a imagem e a AREA DA AGUA.' + ctx +
-              ' Ha alguem em POSSIVEL AFOGAMENTO ou perigo? Sinais: pessoa BOIANDO IMOVEL ou de bruços, '
-              'corpo/vulto parado sob a agua (submerso), ou pessoa se DEBATENDO com dificuldade de manter a cabeca fora. '
-              'NAO alarme para: gente nadando normal, boiando ATIVA/se mexendo, sentada na borda, brincando, ou agua vazia. '
-              'Responda true SOMENTE com sinal REAL de perigo. Responda SO JSON: {"perigo": true/false, "descricao": "1 frase"}')
+    if crowd:
+        prompt = ('Camera de seguranca de uma PISCINA com VARIAS pessoas na agua. Examine CADA pessoa, uma a uma. '
+                  'Dispare (perigo=true) se QUALQUER UMA tiver sinal de afogamento: boiando de BRUCOS (rosto na agua) e imovel, '
+                  'boiando de costas imovel sem nadar, corpo submerso/parado sob a agua, pessoa na VERTICAL com a cabeca pra tras '
+                  'lutando pra manter o rosto fora (afogamento silencioso), ou sendo puxada pra baixo. '
+                  'NAO se tranquilize porque as OUTRAS estao nadando/brincando normal - basta UMA em perigo. '
+                  'NAO alarme para: mergulho voluntario breve, nado normal, brincadeira ativa, gente sentada na borda. '
+                  'Responda true SOMENTE com sinal REAL. SO JSON: {"perigo": true/false, "descricao": "1 frase (quem e onde)"}')
+    else:
+        ctx = (" A pessoa aparenta estar IMOVEL/parada na agua ha cerca de %d segundos." % int(still_secs)) if still_secs >= 20 else ""
+        prompt = ('Camera de seguranca de uma PISCINA; a imagem e a AREA DA AGUA.' + ctx +
+                  ' Ha alguem em POSSIVEL AFOGAMENTO ou perigo? Sinais: pessoa BOIANDO IMOVEL ou de bruços, '
+                  'corpo/vulto parado sob a agua (submerso), ou pessoa se DEBATENDO com dificuldade de manter a cabeca fora. '
+                  'NAO alarme para: gente nadando normal, boiando ATIVA/se mexendo, sentada na borda, brincando, ou agua vazia. '
+                  'Responda true SOMENTE com sinal REAL de perigo. Responda SO JSON: {"perigo": true/false, "descricao": "1 frase"}')
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_KEY}"
     try:
         r = requests.post(url, timeout=20, json={
@@ -662,11 +671,140 @@ PISCINA_CHECK_SEC = int(os.getenv("PISCINA_CHECK_SEC", "20"))   # intervalo entr
 PISCINA_STILL     = int(os.getenv("PISCINA_STILL", "30"))       # imovel por Xs -> antecipa o check
 PISCINA_COOLDOWN  = int(os.getenv("PISCINA_COOLDOWN", "60"))
 PISCINA_MOVE_TOL  = float(os.getenv("PISCINA_MOVE_TOL", "0.05").replace(",", "."))
+PISCINA_CROWD_N     = int(os.getenv("PISCINA_CROWD_N", "4"))       # >= N pessoas na agua = modo multidao
+PISCINA_CHECK_CROWD = int(os.getenv("PISCINA_CHECK_CROWD", "12"))  # em multidao varre o Gemini a cada Xs (vs PISCINA_CHECK_SEC)
+# --- v2 SUBMERSAO (auxilio): rastreio leve p/ detectar pessoa que some na agua e nao reaparece ---
+PISCINA_SUBMERSO_ON  = os.getenv("PISCINA_SUBMERSO_ON", "1") not in ("0", "false", "False", "")
+PISCINA_SUBMERSO_SEC = int(os.getenv("PISCINA_SUBMERSO_SEC", "35"))            # sumiu na agua por Xs -> alerta (faixa 30-45)
+PISCINA_TRACK_TOL    = float(os.getenv("PISCINA_TRACK_TOL", "0.12").replace(",", "."))  # dist (frac) p/ casar deteccao<->track
+PISCINA_MIN_IDADE    = float(os.getenv("PISCINA_MIN_IDADE", "5").replace(",", "."))     # track precisa ter vivido Xs antes de contar sumico
+PISCINA_BORDA        = float(os.getenv("PISCINA_BORDA", "0.06").replace(",", "."))      # margem p/ "interior" (longe da borda = saida)
+_pisc_tracks = {}    # cid -> [...]  (legado do modelo por-track, nao usado)
+_pisc_tid    = {}    # cid -> contador de id de track
+_pisc_pres   = {}    # cid -> {first,last_any,hits_int,cx,cy,last_interior,alerted,veto_ts}
+PISCINA_MIN_HITS = int(os.getenv("PISCINA_MIN_HITS", "2"))   # nº min de deteccoes interior p/ nao ser ghost
+PISCINA_VETO_ON       = os.getenv("PISCINA_VETO_ON", "1") not in ("0", "false", "False", "")  # Gemini derruba falso positivo
+PISCINA_VETO_COOLDOWN = int(os.getenv("PISCINA_VETO_COOLDOWN", "30"))   # apos um veto, espera Xs p/ reavaliar
+PISCINA_DEBUG = os.getenv("PISCINA_DEBUG", "0") not in ("0", "false", "False", "")
+_pisc_dbg_last = {}  # cid -> ts do ultimo print de debug
 
 
 def _bbox_poly(poly, W, H):
     xs = [p[0] for p in poly]; ys = [p[1] for p in poly]
     return (int(max(0, min(xs) * W)), int(max(0, min(ys) * H)), int(min(W, max(xs) * W)), int(min(H, max(ys) * H)))
+
+
+def _interior_pt(x, y, poly, margin):
+    """True se (x,y) esta DENTRO do poligono e a >= margin de qualquer borda (longe da saida)."""
+    if not _pt_in_poly(x, y, poly):
+        return False
+    n = len(poly); dmin = 1e9
+    for i in range(n):
+        ax, ay = poly[i][0], poly[i][1]
+        bx, by = poly[(i + 1) % n][0], poly[(i + 1) % n][1]
+        d = _dist_seg(x, y, ax, ay, bx, by)
+        if d < dmin:
+            dmin = d
+    return dmin >= margin
+
+
+def _pisc_alerta_submersao(cam, agua, frame_bgr, W, H, track, gone, now):
+    img_b64 = None
+    try:
+        import numpy as _np
+        an = frame_bgr.copy()
+        cv2.polylines(an, [_np.array([(int(px * W), int(py * H)) for px, py in agua], dtype=_np.int32)], True, (255, 0, 0), 3)
+        px, py = int(track["cx"] * W), int(track["cy"] * H)
+        cv2.circle(an, (px, py), 26, (0, 0, 255), 3)
+        cv2.putText(an, "sumiu aqui ~%ds" % int(gone), (max(0, px - 70), max(24, py - 32)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        okA, bufA = cv2.imencode(".jpg", an)
+        if okA:
+            img_b64 = base64.b64encode(bufA.tobytes()).decode()
+    except Exception:
+        pass
+    desc = ("PISCINA (auxilio): possivel AFOGAMENTO por SUBMERSAO - uma pessoa sumiu dentro da agua ha ~%ds e nao reapareceu na superficie" % int(gone))
+    print("[piscina] %s: SUBMERSAO - track %s gone %ds" % (cam.get("nome", ""), track.get("id"), int(gone)))
+    envia_alerta(cam, "afogamento", 0.85, desc, img_b64, verificado=True)
+
+
+def _gemini_veto_submersao(frame_bgr, agua, cx, cy, W, H, nome):
+    """True = CANCELAR o alerta (ha pessoa claramente presente/tranquila = falso positivo).
+    Fail-safe: sem Gemini/erro/duvida -> False (NAO cancela = envia o alerta)."""
+    if not USE_GEMINI or not GEMINI_KEY:
+        return False, ""
+    try:
+        import numpy as _np
+        an = frame_bgr.copy()
+        cv2.polylines(an, [_np.array([(int(px * W), int(py * H)) for px, py in agua], dtype=_np.int32)], True, (255, 0, 0), 2)
+        cv2.circle(an, (int(cx * W), int(cy * H)), 26, (0, 0, 255), 3)
+        ok, buf = cv2.imencode(".jpg", an)
+        if not ok:
+            return False, ""
+        crop = buf.tobytes()
+    except Exception:
+        return False, ""
+    prompt = ('Camera de PISCINA. Um alerta automatico suspeita que a pessoa no CIRCULO VERMELHO AFUNDOU '
+              '(submergiu) e nao reapareceu. Olhe a imagem inteira. Responda cancelar=true SOMENTE se ha uma '
+              'pessoa CLARAMENTE VISIVEL e TRANQUILA que apenas saiu da agua ou nunca afundou (sentada, em pe, '
+              'na beira/deck, andando normal) = FALSO ALARME. Responda cancelar=false se a agua no circulo parece '
+              'VAZIA, se alguem parece em APUROS/submerso, ou se voce esta em DUVIDA. Na duvida NAO cancele. '
+              'SO JSON: {"cancelar": true/false, "motivo": "1 frase"}')
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_KEY}"
+    try:
+        r = requests.post(url, timeout=15, json={
+            "contents": [{"parts": [{"text": prompt},
+                          {"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(crop).decode()}}]}],
+            "generationConfig": {"response_mime_type": "application/json", "temperature": 0}})
+        d = json.loads(r.json()["candidates"][0]["content"]["parts"][0]["text"])
+        return bool(d.get("cancelar")), d.get("motivo", "")
+    except Exception:
+        return False, ""
+
+
+def _pisc_submerso(cam, cid, inwater, agua, frame_bgr, W, H, now):
+    """OCUPACAO da zona (robusto a deteccao esparsa). Dispara SO se: houve pessoa no INTERIOR
+    (>= MIN_HITS), a ULTIMA deteccao na agua foi no INTERIOR (nao na borda=saindo), a zona ficou
+    vazia por SUBMERSO_SEC, e o Gemini NAO vetar (nao ve pessoa tranquila). Assim 'sair da piscina'
+    NAO dispara (ultima deteccao vai pra borda), e falso positivo por perda de deteccao cai no veto."""
+    st = _pisc_pres.get(cid)
+    if inwater:
+        interior_pts = [(fx, fy) for (fx, fy, _p) in inwater if _interior_pt(fx, fy, agua, PISCINA_BORDA)]
+        if st is None or (now - st["last_any"]) > PISCINA_SUBMERSO_SEC:
+            st = {"first": now, "last_any": now, "hits_int": 0, "cx": None, "cy": None,
+                  "last_interior": False, "alerted": False, "veto_ts": 0}
+        st["last_any"] = now
+        st["last_interior"] = bool(interior_pts)
+        if interior_pts:
+            st["hits_int"] += 1
+            st["cx"] = sum(p[0] for p in interior_pts) / len(interior_pts)
+            st["cy"] = sum(p[1] for p in interior_pts) / len(interior_pts)
+            st["alerted"] = False
+        _pisc_pres[cid] = st
+        return
+    if st is None:
+        return
+    gone = now - st["last_any"]
+    if (not st["alerted"] and st["hits_int"] >= PISCINA_MIN_HITS and st["cx"] is not None
+            and st.get("last_interior") and gone >= PISCINA_SUBMERSO_SEC
+            and (now - _pisc_ultimo.get(cid, 0) >= PISCINA_COOLDOWN)
+            and (now - st.get("veto_ts", 0) >= PISCINA_VETO_COOLDOWN)):
+        vetar, motivo = False, ""
+        if PISCINA_VETO_ON:
+            try:
+                vetar, motivo = _gemini_veto_submersao(frame_bgr, agua, st["cx"], st["cy"], W, H, cam.get("nome", ""))
+            except Exception:
+                vetar, motivo = False, ""
+        if vetar:
+            st["veto_ts"] = now
+            print("[piscina] %s: submersao VETADA pelo Gemini - %s" % (cam.get("nome", ""), motivo))
+        else:
+            st["alerted"] = True
+            _pisc_ultimo[cid] = now
+            _pisc_alerta_submersao(cam, agua, frame_bgr, W, H, {"cx": st["cx"], "cy": st["cy"], "id": "zona"}, gone, now)
+        _pisc_pres[cid] = st
+    if gone > PISCINA_SUBMERSO_SEC + 120:
+        _pisc_pres.pop(cid, None)
 
 
 def _piscina_check(cam, predictions, frame_bgr, now):
@@ -682,6 +820,16 @@ def _piscina_check(cam, predictions, frame_bgr, now):
     H, W = frame_bgr.shape[:2]
     inwater = [(fx, fy, p) for (fx, fy, p) in _person_pts(preds, W, H) if _pt_in_poly(fx, fy, agua)]
     cid = cam.get("id"); st = _pisc.get(cid) or {}
+    if PISCINA_SUBMERSO_ON:
+        try:
+            _pisc_submerso(cam, cid, inwater, agua, frame_bgr, W, H, now)
+        except Exception as _e:
+            print("[piscina-sub] erro:", _e)
+    if PISCINA_DEBUG and now - _pisc_dbg_last.get(cid, 0) >= 2:
+        _pisc_dbg_last[cid] = now
+        _p = _pisc_pres.get(cid)
+        _pd = ("hits=%d gone=%.0f alert=%s" % (_p["hits_int"], now - _p["last_any"], _p["alerted"])) if _p else "-"
+        print("[piscina-dbg] %s | inwater=%d | pres[%s]" % (cam.get("nome", ""), len(inwater), _pd))
     if not inwater:
         _pisc[cid] = {"last_check": st.get("last_check", 0), "centroid": None, "still_since": now}
         return
@@ -694,7 +842,9 @@ def _piscina_check(cam, predictions, frame_bgr, now):
     still = now - still_since
     last_check = st.get("last_check", 0)
     _pisc[cid] = {"last_check": last_check, "centroid": (cx, cy), "still_since": still_since}
-    if not ((now - last_check >= PISCINA_CHECK_SEC) or (still >= PISCINA_STILL and now - last_check >= 8)):
+    _crowd = len(inwater) >= PISCINA_CROWD_N
+    _chk = PISCINA_CHECK_CROWD if _crowd else PISCINA_CHECK_SEC
+    if not ((now - last_check >= _chk) or (still >= PISCINA_STILL and now - last_check >= 8)):
         return
     _pisc[cid]["last_check"] = now
     x1, y1, x2, y2 = _bbox_poly(agua, W, H)
@@ -704,7 +854,7 @@ def _piscina_check(cam, predictions, frame_bgr, now):
         ok, buf = cv2.imencode(".jpg", frame_bgr[y1:y2, x1:x2])
         if not ok:
             return
-        perigo, desc = gemini_piscina(buf.tobytes(), cam.get("nome", ""), still)
+        perigo, desc = gemini_piscina(buf.tobytes(), cam.get("nome", ""), still, crowd=_crowd)
     except Exception as e:
         print("[piscina] erro:", e); return
     if not perigo or (now - _pisc_ultimo.get(cid, 0) < PISCINA_COOLDOWN):
