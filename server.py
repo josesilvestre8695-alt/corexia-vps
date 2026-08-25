@@ -4064,6 +4064,46 @@ _PERF_JS = r"""<script>/* corexia-perf */
   window.MutationObserver=W;
 })();</script>"""
 
+_PORTAL_VIDEO_JS = r"""<script>/* corexia-vid */
+(function(){
+  if(window.__cxVid) return; window.__cxVid=true;
+  var VIS_MIN=0.35, PRIMARY_AREA=0.55;
+  function vids(){ return Array.prototype.slice.call(document.querySelectorAll('video')); }
+  function W(){ return window.innerWidth||document.documentElement.clientWidth||1; }
+  function H(){ return window.innerHeight||document.documentElement.clientHeight||1; }
+  function rect(v){ try{ return v.getBoundingClientRect(); }catch(e){ return null; } }
+  function interArea(r){ if(!r||r.width<=0||r.height<=0) return 0;
+    var x=Math.max(0,Math.min(r.right,W())-Math.max(r.left,0));
+    var y=Math.max(0,Math.min(r.bottom,H())-Math.max(r.top,0)); return x*y; }
+  function visFrac(r){ var a=(r?r.width*r.height:0); return a>0? interArea(r)/a : 0; }
+  function areaFrac(r){ return interArea(r)/(W()*H()); }
+  function fsEl(){ return document.fullscreenElement||document.webkitFullscreenElement||window.__cxFsVid||null; }
+  function play(v){ try{ var p=v.play(); if(p&&p.catch)p.catch(function(){}); }catch(e){} }
+  function pause(v){ try{ if(!v.paused)v.pause(); }catch(e){} }
+  function govern(){
+    var list=vids(); if(!list.length) return;
+    if(document.hidden){ for(var i=0;i<list.length;i++)pause(list[i]); return; }
+    var fe=fsEl(), primary=null;
+    if(fe){ for(var a=0;a<list.length;a++){ var vf=list[a]; if(vf===fe||(fe.contains&&fe.contains(vf))){ primary=vf; break; } } if(!primary && fe.tagName==='VIDEO') primary=fe; }
+    if(!primary){ var best=0; for(var b=0;b<list.length;b++){ var af=areaFrac(rect(list[b])); if(af>=PRIMARY_AREA && af>best){ best=af; primary=list[b]; } } }
+    if(primary){ for(var c=0;c<list.length;c++){ if(list[c]===primary)play(list[c]); else pause(list[c]); } return; }
+    for(var d=0;d<list.length;d++){ var vd=list[d]; if(visFrac(rect(vd))>=VIS_MIN)play(vd); else pause(vd); }
+  }
+  var sch=null;
+  function schedule(){ if(sch)return; sch=setTimeout(function(){ sch=null; try{govern();}catch(e){} },130); }
+  ['scroll','resize','orientationchange','fullscreenchange','webkitfullscreenchange'].forEach(function(ev){
+    try{ window.addEventListener(ev,schedule,{passive:true,capture:true}); }catch(e){ window.addEventListener(ev,schedule,true); }
+  });
+  document.addEventListener('visibilitychange',schedule,true);
+  document.addEventListener('webkitbeginfullscreen',function(e){ window.__cxFsVid=e.target; schedule(); },true);
+  document.addEventListener('webkitendfullscreen',function(e){ if(window.__cxFsVid===e.target)window.__cxFsVid=null; schedule(); },true);
+  try{ var mo=new MutationObserver(function(m){ for(var i=0;i<m.length;i++){ if(m[i].addedNodes&&m[i].addedNodes.length){ schedule(); return; } } }); mo.observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}
+  setInterval(schedule,1500);
+  schedule();
+})();
+</script>"""
+
+
 _PORTAL_PWA_JS = r"""<script>/* corexia-pwa */
 (function(){
   if(window.__cxPwa)return; window.__cxPwa=true;
@@ -4158,6 +4198,8 @@ def spa(full_path: str, request: Request):
                 _inj += _PORTAL_FATURAS_JS
             if "corexia-pwa" not in _html:
                 _inj += _PORTAL_PWA_JS
+            if "corexia-vid" not in _html:
+                _inj += _PORTAL_VIDEO_JS
             # (busca FAB e meu-mosaico agora sao itens de menu via _PORTAL_MENU_JS)
             if "corexia-net" not in _html:
                 _inj += _NET_WIDGET_JS
