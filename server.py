@@ -1693,7 +1693,7 @@ async def listar(req: Request):
             if _d.get("camera_id"):
                 cfg_by_cam[_d["camera_id"]] = {"ativo": _d.get("ativo", True),
                     "horarios": _d.get("horarios", []), "analiticos_padrao": _d.get("analiticos_padrao", []),
-                    "zonas_intrusao": _d.get("zonas_intrusao", []), "epi_itens": _d.get("epi_itens", [])}
+                    "zonas_intrusao": _d.get("zonas_intrusao", []), "epi_itens": _d.get("epi_itens", []), "guarda_armado": bool(_d.get("guarda_armado", False))}
         _c.close()
     except Exception as _e:
         print("[listarCamerasIA] cfg analitico:", _e)
@@ -3619,6 +3619,64 @@ async def cliente_cameras(req: Request):
     return out
 
 
+@app.get("/api/portal/guarda")
+async def portal_guarda_list(req: Request):
+    u = current_user(req)
+    if not u:
+        return _unauth()
+    cid = u.get("cliente_id") or ""
+    if not cid:
+        return _forbidden()
+    mycams = {}
+    for o in _todas_cameras():
+        if o.get("cliente_id") == cid:
+            mycams[o.get("id")] = o.get("nome", "") or o.get("id")
+    out = []
+    c = db()
+    for r in c.execute("SELECT data FROM entities WHERE entity='ConfigAnalitico'").fetchall():
+        d = json.loads(r["data"]); camid = d.get("camera_id")
+        if camid not in mycams:
+            continue
+        ativos = set(d.get("analiticos_padrao") or [])
+        for h in (d.get("horarios") or []):
+            ativos.update(h.get("analiticos") or [])
+        if "guarda_piscina" in ativos:
+            out.append({"camera_id": camid, "nome": mycams[camid], "armado": bool(d.get("guarda_armado"))})
+    c.close()
+    out.sort(key=lambda x: (x["nome"] or "").lower())
+    return out
+
+
+@app.post("/api/portal/guarda")
+async def portal_guarda_set(req: Request):
+    u = current_user(req)
+    if not u:
+        return _unauth()
+    cid = u.get("cliente_id") or ""
+    if not cid:
+        return _forbidden()
+    b = await req.json()
+    camid = (b.get("camera_id") or "").strip()
+    armado = bool(b.get("armado"))
+    cam = next((o for o in _todas_cameras() if o.get("id") == camid), None)
+    if not cam or cam.get("cliente_id") != cid:
+        return _forbidden()
+    c = db()
+    row = c.execute("SELECT id, data FROM entities WHERE entity='ConfigAnalitico' AND json_extract(data,'$.camera_id')=?", (camid,)).fetchone()
+    if not row:
+        c.close(); return JSONResponse({"error": "camera sem config de IA"}, status_code=400)
+    d = json.loads(row["data"])
+    ativos = set(d.get("analiticos_padrao") or [])
+    for h in (d.get("horarios") or []):
+        ativos.update(h.get("analiticos") or [])
+    if "guarda_piscina" not in ativos:
+        c.close(); return JSONResponse({"error": "Guarda-Piscina nao habilitado nesta camera"}, status_code=400)
+    d["guarda_armado"] = armado
+    c.execute("UPDATE entities SET data=?, updated_date=? WHERE entity='ConfigAnalitico' AND id=?", (json.dumps(d, ensure_ascii=False), _now_iso(), row["id"]))
+    c.commit(); c.close()
+    return {"success": True, "armado": armado}
+
+
 @app.post("/api/subusers")
 async def subuser_criar(req: Request):
     u = current_user(req)
@@ -4067,93 +4125,142 @@ _PERF_JS = r"""<script>/* corexia-perf */
 _PORTAL_VIDEO_JS = r"""<script>/* corexia-vid */
 (function(){
   if(window.__cxVid) return; window.__cxVid=true;
-  var VIS_MIN=0.35, PRIMARY_AREA=0.55;
+  var TOKEN=''; try{ TOKEN=localStorage.getItem('corexia_token')||''; }catch(e){}
+  var ua=navigator.userAgent||'';
+  var isIOS=/iphone|ipad|ipod/i.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  var isMobile=isIOS||/android/i.test(ua)||(window.matchMedia&&window.matchMedia('(max-width:860px)').matches);
+  var MAX_ACTIVE=isMobile?(isIOS?1:2):99;   // iPhone ~1 decoder; Android ~2; PC sem limite
+  var VIS_MIN=0.25;
   function vids(){ return Array.prototype.slice.call(document.querySelectorAll('video')); }
-  function W(){ return window.innerWidth||document.documentElement.clientWidth||1; }
-  function H(){ return window.innerHeight||document.documentElement.clientHeight||1; }
+  function W(){ return window.innerWidth||1; }
+  function Hh(){ return window.innerHeight||1; }
   function rect(v){ try{ return v.getBoundingClientRect(); }catch(e){ return null; } }
-  function interArea(r){ if(!r||r.width<=0||r.height<=0) return 0;
+  function interArea(r){ if(!r||r.width<=0||r.height<=0)return 0;
     var x=Math.max(0,Math.min(r.right,W())-Math.max(r.left,0));
-    var y=Math.max(0,Math.min(r.bottom,H())-Math.max(r.top,0)); return x*y; }
-  function visFrac(r){ var a=(r?r.width*r.height:0); return a>0? interArea(r)/a : 0; }
-  function areaFrac(r){ return interArea(r)/(W()*H()); }
+    var y=Math.max(0,Math.min(r.bottom,Hh())-Math.max(r.top,0)); return x*y; }
+  function areaFrac(r){ return interArea(r)/(W()*Hh()); }
+  function visFrac(r){ var a=(r?r.width*r.height:0); return a>0?interArea(r)/a:0; }
   function fsEl(){ return document.fullscreenElement||document.webkitFullscreenElement||window.__cxFsVid||null; }
-  function play(v){ try{ var p=v.play(); if(p&&p.catch)p.catch(function(){}); }catch(e){} }
-  function pause(v){ try{ if(!v.paused)v.pause(); }catch(e){} }
+  function camId(u){ var m=/camlive\/([^\/?]+)/.exec(u||''); return m?m[1]:''; }
+  function poster(v){
+    try{ var id=camId(v.__cxSrc); if(!id) return;
+      v.poster='/camthumb/'+id+'?t='+encodeURIComponent(TOKEN)+'&r='+Math.floor(Date.now()/6000); v.__cxPoster=1;
+    }catch(e){}
+  }
+  function restorableSrc(v){ var s=v.currentSrc||v.getAttribute('src')||''; return /\.m3u8/i.test(s)?s:''; }
+  function activate(v){
+    try{
+      if(v.__cxFreed && v.__cxSrc){ v.__cxFreed=false; if((v.currentSrc||'')!==v.__cxSrc){ v.setAttribute('src',v.__cxSrc); try{v.load();}catch(e){} } }
+      var p=v.play(); if(p&&p.catch)p.catch(function(){});
+    }catch(e){}
+  }
+  function deactivate(v){
+    try{
+      if(!v.paused)v.pause();
+      if(!v.__cxFreed){
+        var s=restorableSrc(v);
+        if(s){ v.__cxSrc=s; poster(v); v.removeAttribute('src'); try{v.load();}catch(e){} v.__cxFreed=true; }
+      } else { poster(v); }
+    }catch(e){}
+  }
   function govern(){
-    var list=vids(); if(!list.length) return;
-    if(document.hidden){ for(var i=0;i<list.length;i++)pause(list[i]); return; }
-    var fe=fsEl(), primary=null;
-    if(fe){ for(var a=0;a<list.length;a++){ var vf=list[a]; if(vf===fe||(fe.contains&&fe.contains(vf))){ primary=vf; break; } } if(!primary && fe.tagName==='VIDEO') primary=fe; }
-    if(!primary){ var best=0; for(var b=0;b<list.length;b++){ var af=areaFrac(rect(list[b])); if(af>=PRIMARY_AREA && af>best){ best=af; primary=list[b]; } } }
-    if(primary){ for(var c=0;c<list.length;c++){ if(list[c]===primary)play(list[c]); else pause(list[c]); } return; }
-    for(var d=0;d<list.length;d++){ var vd=list[d]; if(visFrac(rect(vd))>=VIS_MIN)play(vd); else pause(vd); }
+    var list=vids(); if(!list.length)return;
+    if(document.hidden){ for(var i=0;i<list.length;i++)deactivate(list[i]); return; }
+    var fe=fsEl(), scored=[];
+    for(var j=0;j<list.length;j++){ var v=list[j]; var r=rect(v);
+      var isFs=!!(fe&&(v===fe||(fe.contains&&fe.contains(v))));
+      var sc=isFs?1e9:(areaFrac(r)*2+visFrac(r));
+      scored.push({v:v,sc:sc,on:isFs||visFrac(r)>=VIS_MIN});
+    }
+    scored.sort(function(a,b){return b.sc-a.sc;});
+    var act=0;
+    for(var k=0;k<scored.length;k++){ var it=scored[k];
+      if(it.on && act<MAX_ACTIVE){ activate(it.v); act++; } else { deactivate(it.v); }
+    }
   }
   var sch=null;
-  function schedule(){ if(sch)return; sch=setTimeout(function(){ sch=null; try{govern();}catch(e){} },130); }
+  function schedule(){ if(sch)return; sch=setTimeout(function(){ sch=null; try{govern();}catch(e){} },140); }
   ['scroll','resize','orientationchange','fullscreenchange','webkitfullscreenchange'].forEach(function(ev){
-    try{ window.addEventListener(ev,schedule,{passive:true,capture:true}); }catch(e){ window.addEventListener(ev,schedule,true); }
+    try{ window.addEventListener(ev,schedule,{passive:true,capture:true}); }catch(e){ try{ window.addEventListener(ev,schedule,true); }catch(e2){} }
   });
   document.addEventListener('visibilitychange',schedule,true);
   document.addEventListener('webkitbeginfullscreen',function(e){ window.__cxFsVid=e.target; schedule(); },true);
   document.addEventListener('webkitendfullscreen',function(e){ if(window.__cxFsVid===e.target)window.__cxFsVid=null; schedule(); },true);
-  try{ var mo=new MutationObserver(function(m){ for(var i=0;i<m.length;i++){ if(m[i].addedNodes&&m[i].addedNodes.length){ schedule(); return; } } }); mo.observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}
-  setInterval(schedule,1500);
+  try{ var mo=new MutationObserver(function(){ schedule(); }); mo.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['src']}); }catch(e){}
+  setInterval(schedule,3000);
   schedule();
+})();
+</script>"""
+
+
+_PORTAL_VIEWPORT_CSS = r"""<style>/* corexia-viewport */
+@media (max-width:1024px){
+  /* usa a altura VISIVEL (com barras do navegador) em vez de 100vh -> nao fica atras da barra */
+  .min-h-screen{ min-height:100svh !important; }
+  .h-screen{ height:100svh !important; }
+  /* raiz das telas (mosaico/cameras): garante respiro e afasta do notch, mantendo o padding original como piso */
+  .min-h-screen.bg-background{
+    padding-top:max(1.5rem, env(safe-area-inset-top)) !important;
+    padding-bottom:max(1.5rem, env(safe-area-inset-bottom)) !important;
+    padding-left:max(1.5rem, env(safe-area-inset-left)) !important;
+    padding-right:max(1.5rem, env(safe-area-inset-right)) !important;
+  }
+}
+</style>"""
+
+
+_PORTAL_GUARDA_JS = r"""<script>/* corexia-guarda */
+(function(){
+  if(window.__cxGuarda) return; window.__cxGuarda=true;
+  var TOKEN=localStorage.getItem('corexia_token'); if(!TOKEN) return;
+  function api(m,p,b){ return fetch(p,{method:m,headers:{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined}).then(function(r){ return r.ok?r.json():Promise.reject(r); }); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  var CAMS=[], panel=null, btn=null;
+  function ensureBtn(){ if(btn) return;
+    btn=document.createElement('button'); btn.id='cx-guarda-btn';
+    btn.style.cssText='position:fixed;right:14px;bottom:84px;z-index:9996;background:#0ea5e9;color:#fff;border:none;border-radius:999px;padding:11px 15px;font:700 13px system-ui,-apple-system,sans-serif;box-shadow:0 8px 24px rgba(14,165,233,.45);cursor:pointer;display:none';
+    btn.textContent='🛡️ Guarda-Piscina';
+    btn.addEventListener('click', openPanel); document.body.appendChild(btn);
+  }
+  function refresh(){ api('GET','/api/portal/guarda').then(function(list){ CAMS=list||[]; ensureBtn(); btn.style.display=CAMS.length?'block':'none'; if(panel && panel.style.display!=='none') renderPanel(); }).catch(function(){}); }
+  function openPanel(){ if(!panel){ panel=document.createElement('div'); panel.id='cx-guarda-panel';
+      panel.style.cssText='position:fixed;right:14px;bottom:132px;z-index:9997;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:14px;padding:14px;width:300px;max-width:92vw;box-shadow:0 16px 50px rgba(0,0,0,.55);font:14px system-ui,-apple-system,sans-serif';
+      document.body.appendChild(panel); }
+    panel.style.display='block'; renderPanel();
+  }
+  function renderPanel(){
+    var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>🛡️ Guarda-Piscina</b><span id="cx-guarda-x" style="cursor:pointer;color:#8b949e;font-size:18px">×</span></div>';
+    h+='<div style="font-size:12px;color:#8b949e;margin-bottom:10px">Ative quando a piscina deve ficar VAZIA. Se alguem/algo entrar na agua, voce recebe alerta.</div>';
+    if(!CAMS.length){ h+='<div style="color:#8b949e">Nenhuma camera com Guarda-Piscina.</div>'; }
+    CAMS.forEach(function(c){
+      h+='<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid #21262d"><span>'+esc(c.nome)+'</span>'
+       +'<button data-cam="'+esc(c.camera_id)+'" data-arm="'+(c.armado?'0':'1')+'" style="background:'+(c.armado?'#238636':'#30363d')+';color:#fff;border:none;border-radius:8px;padding:7px 13px;font-weight:700;cursor:pointer">'+(c.armado?'ARMADO':'DESARMADO')+'</button></div>';
+    });
+    panel.innerHTML=h;
+    var x=panel.querySelector('#cx-guarda-x'); if(x) x.addEventListener('click',function(){ panel.style.display='none'; });
+    panel.querySelectorAll('button[data-cam]').forEach(function(bt){ bt.addEventListener('click',function(){
+      var camid=bt.getAttribute('data-cam'); var arm=bt.getAttribute('data-arm')==='1'; bt.disabled=true;
+      api('POST','/api/portal/guarda',{camera_id:camid,armado:arm}).then(function(){ refresh(); }).catch(function(){ bt.disabled=false; });
+    }); });
+  }
+  setTimeout(refresh,1800); setInterval(refresh,60000);
 })();
 </script>"""
 
 
 _PORTAL_PWA_JS = r"""<script>/* corexia-pwa */
 (function(){
-  if(window.__cxPwa)return; window.__cxPwa=true;
-  if('serviceWorker' in navigator){ window.addEventListener('load',function(){ navigator.serviceWorker.register('/sw.js',{scope:'/'}).catch(function(){}); }); }
-  var mm=window.matchMedia;
-  var standalone=(mm && mm('(display-mode: standalone)').matches) || (navigator.standalone===true);
-  if(standalone) return;
-  var ua=navigator.userAgent||'';
-  var isIOS=/iphone|ipad|ipod/i.test(ua) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
-  var isMobile=isIOS || /android/i.test(ua) || (mm && mm('(max-width: 860px)').matches);
-  if(!isMobile) return;
-  try{ var dz=parseInt(localStorage.getItem('cx_pwa_dismiss')||'0',10); if(dz && (Date.now()-dz) < 7*24*3600*1000) return; }catch(e){}
-  var deferred=null;
-  var BRAND=(window.__WL__&&window.__WL__.nome)?String(window.__WL__.nome):'Corexia';
-  var SHARE='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b9dff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><path d="M12 15V3"></path><path d="M8 7l4-4 4 4"></path><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"></path></svg>';
-  var PLUSB='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b9dff" stroke-width="2" stroke-linecap="round" style="vertical-align:-3px"><rect x="3" y="3" width="18" height="18" rx="4"></rect><path d="M12 8v8M8 12h8"></path></svg>';
-  function el(t,c,x){ var e=document.createElement(t); if(c)e.style.cssText=c; if(x!=null)e.textContent=x; return e; }
-  function save(ms){ try{ localStorage.setItem('cx_pwa_dismiss',String(ms)); }catch(e){} }
-  function hide(){ var b=document.getElementById('cx-pwa'); if(b&&b.parentNode)b.parentNode.removeChild(b); }
-  function dismiss(){ save(Date.now()); hide(); }
-  window.addEventListener('appinstalled',function(){ save(Date.now()+3650*24*3600*1000); hide(); });
-  window.addEventListener('beforeinstallprompt',function(e){ e.preventDefault(); deferred=e; show('android'); });
-  function show(kind){
-    if(document.getElementById('cx-pwa'))return;
-    if(!document.body){ setTimeout(function(){show(kind);},400); return; }
-    if(!document.getElementById('cx-pwa-css')){ var s=el('style'); s.id='cx-pwa-css'; s.textContent='@keyframes cxpwaup{from{transform:translateY(-16px);opacity:0}to{transform:translateY(0);opacity:1}}'; (document.head||document.documentElement).appendChild(s); }
-    var wrap=el('div','position:fixed;top:0;left:0;right:0;z-index:2147483000;display:flex;justify-content:center;padding:10px 12px;padding-top:calc(env(safe-area-inset-top, 0px) + 10px);box-sizing:border-box;pointer-events:none;font-family:system-ui,-apple-system,sans-serif'); wrap.id='cx-pwa';
-    var card=el('div','pointer-events:auto;width:100%;max-width:440px;max-height:82vh;overflow-y:auto;-webkit-overflow-scrolling:touch;background:#12151b;color:#f2f4f6;border:1px solid #262d38;border-radius:16px;box-shadow:0 16px 50px rgba(0,0,0,.55);padding:16px 16px 14px;position:relative;animation:cxpwaup .26s ease');
-    var x=el('button','position:absolute;top:6px;right:10px;background:none;border:0;color:#8b96a6;font-size:23px;line-height:1;cursor:pointer','×'); x.setAttribute('aria-label','Fechar'); x.onclick=dismiss;
-    var rowc=el('div','display:flex;align-items:center;gap:12px;padding-right:16px');
-    var ic=el('img','width:54px;height:54px;border-radius:13px;flex:none;background:#0a0a0a'); ic.src='/pwa-icon-192.png'; ic.alt=BRAND;
-    var tc=el('div','min-width:0;flex:1');
-    tc.appendChild(el('div','font-weight:700;font-size:15.5px','Instale o app '+BRAND));
-    tc.appendChild(el('div','color:#9aa4b2;font-size:12.5px;margin-top:2px','Suas câmeras e alertas na tela inicial, com abertura rápida.'));
-    rowc.appendChild(ic); rowc.appendChild(tc); card.appendChild(x); card.appendChild(rowc);
-    if(kind==='android'){
-      var b1=el('button','margin-top:14px;width:100%;background:#f97316;color:#111;font-weight:700;font-size:15px;border:0;border-radius:12px;padding:12px;cursor:pointer','Instalar aplicativo');
-      b1.onclick=function(){ if(!deferred){ dismiss(); return; } deferred.prompt(); deferred.userChoice.then(function(){ deferred=null; hide(); }); };
-      var b2=el('button','margin-top:8px;width:100%;background:none;color:#8b96a6;font-size:13px;border:0;cursor:pointer','Agora não'); b2.onclick=dismiss;
-      card.appendChild(b1); card.appendChild(b2);
-    } else {
-      var st=el('div','margin-top:13px;background:#0e1116;border:1px solid #232a34;border-radius:12px;padding:12px;font-size:13.5px;line-height:1.6;color:#cdd5df');
-      st.innerHTML='Para instalar no iPhone/iPad:<br>1) Toque em <b>Compartilhar</b> '+SHARE+' na barra do Safari.<br>2) Escolha <b>Adicionar à Tela de Início</b> '+PLUSB+'.';
-      var ok=el('button','margin-top:12px;width:100%;background:#f97316;color:#111;font-weight:700;font-size:15px;border:0;border-radius:12px;padding:11px;cursor:pointer','Entendi'); ok.onclick=dismiss;
-      card.appendChild(st); card.appendChild(ok);
+  if(window.__cxPwaOff) return; window.__cxPwaOff=true;
+  try{
+    if('serviceWorker' in navigator && navigator.serviceWorker.getRegistrations){
+      navigator.serviceWorker.getRegistrations().then(function(rs){ rs.forEach(function(r){ try{ r.unregister(); }catch(e){} }); }).catch(function(){});
     }
-    wrap.appendChild(card); document.body.appendChild(wrap);
-  }
-  if(isIOS){ setTimeout(function(){ show('ios'); }, 1600); }
-})();</script>"""
+    if(window.caches && caches.keys){
+      caches.keys().then(function(ks){ ks.forEach(function(k){ try{ caches.delete(k); }catch(e){} }); }).catch(function(){});
+    }
+  }catch(e){}
+})();
+</script>"""
 
 @app.get("/{full_path:path}")
 def spa(full_path: str, request: Request):
@@ -4200,6 +4307,10 @@ def spa(full_path: str, request: Request):
                 _inj += _PORTAL_PWA_JS
             if "corexia-vid" not in _html:
                 _inj += _PORTAL_VIDEO_JS
+            if "corexia-viewport" not in _html:
+                _inj += _PORTAL_VIEWPORT_CSS
+            if "corexia-guarda" not in _html:
+                _inj += _PORTAL_GUARDA_JS
             # (busca FAB e meu-mosaico agora sao itens de menu via _PORTAL_MENU_JS)
             if "corexia-net" not in _html:
                 _inj += _NET_WIDGET_JS

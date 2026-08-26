@@ -411,6 +411,10 @@ _VOCAB_MODEL = {
     "heatmap": (MODEL_ID_GENERAL,),  # mapa de calor usa COCO (pessoa)
     "toca_ninja": (MODEL_ID_GENERAL,),  # balaclava usa COCO (pessoa) + Gemini
     "piscina": (MODEL_ID_GENERAL,),  # afogamento usa COCO (pessoa) + Gemini
+    "facial": (MODEL_ID_GENERAL,),  # controle de acesso: COCO so p/ a camera ser processada; recon = YuNet+SFace em _facial_check
+    "guarda_piscina": (MODEL_ID_GENERAL,),  # guarda-piscina: COCO (pessoa/animal) na agua quando ARMADO
+    "suspeito": (MODEL_ID_GENERAL,),  # detector de suspeitos: COCO (pessoa) -> merodeio/permanencia
+    "furto": (MODEL_ID_GENERAL,),  # ocultacao/furto (varejo): COCO (pessoa) + Gemini no recorte
 }
 
 
@@ -682,6 +686,8 @@ PISCINA_BORDA        = float(os.getenv("PISCINA_BORDA", "0.06").replace(",", "."
 _pisc_tracks = {}    # cid -> [...]  (legado do modelo por-track, nao usado)
 _pisc_tid    = {}    # cid -> contador de id de track
 _pisc_pres   = {}    # cid -> {first,last_any,hits_int,cx,cy,last_interior,alerted,veto_ts}
+_pisc_ptracks = {}   # cid -> [ {id,cx,cy,first,last,hits,interior,alerted,crop} ] (rastreio POR PESSOA - piscina cheia)
+_pisc_ptid    = {}   # cid -> contador de id de track por pessoa
 PISCINA_MIN_HITS = int(os.getenv("PISCINA_MIN_HITS", "2"))   # nº min de deteccoes interior p/ nao ser ghost
 PISCINA_VETO_ON       = os.getenv("PISCINA_VETO_ON", "1") not in ("0", "false", "False", "")  # Gemini derruba falso positivo
 PISCINA_VETO_COOLDOWN = int(os.getenv("PISCINA_VETO_COOLDOWN", "30"))   # apos um veto, espera Xs p/ reavaliar
@@ -807,6 +813,398 @@ def _pisc_submerso(cam, cid, inwater, agua, frame_bgr, W, H, now):
         _pisc_pres.pop(cid, None)
 
 
+def _crop_person(frame_bgr, p, W, H):
+    try:
+        cx = float(p.get("x", 0)); cy = float(p.get("y", 0)); w = float(p.get("width", 0)); h = float(p.get("height", 0))
+        mx = int(w * 0.15); my = int(h * 0.12)
+        x1 = max(0, int(cx - w / 2) - mx); y1 = max(0, int(cy - h / 2) - my)
+        x2 = min(W, int(cx + w / 2) + mx); y2 = min(H, int(cy + h / 2) + my)
+        if x2 - x1 < 8 or y2 - y1 < 8:
+            return None
+        return frame_bgr[y1:y2, x1:x2].copy()
+    except Exception:
+        return None
+
+
+def _pisc_alerta_pessoa(cam, agua, frame_bgr, W, H, t, gone, now):
+    import numpy as _np
+    an = frame_bgr.copy()
+    try:
+        cv2.polylines(an, [_np.array([(int(px * W), int(py * H)) for px, py in agua], dtype=_np.int32)], True, (255, 0, 0), 2)
+        px, py = int(t["cx"] * W), int(t["cy"] * H)
+        cv2.circle(an, (px, py), 34, (0, 0, 255), 4)
+        cv2.arrowedLine(an, (px, max(0, py - 95)), (px, max(0, py - 40)), (0, 0, 255), 4, tipLength=0.35)
+        cv2.putText(an, "SUMIU ~%ds" % int(gone), (max(0, px - 78), max(28, py - 102)), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+        crop = t.get("crop")
+        if crop is not None and getattr(crop, "size", 0) > 0:
+            ih = 130; iw = max(46, min(int(crop.shape[1] * ih / max(1, crop.shape[0])), 190))
+            th = cv2.resize(crop, (iw, ih))
+            an[10:10 + ih, 10:10 + iw] = th
+            cv2.rectangle(an, (10, 10), (10 + iw, 10 + ih), (0, 0, 255), 3)
+            cv2.putText(an, "ultima vez visto", (10, 10 + ih + 17), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+    except Exception as _e:
+        print("[piscina-pessoa] desenho:", _e)
+    img_b64 = None
+    try:
+        ok, buf = cv2.imencode(".jpg", an)
+        if ok:
+            img_b64 = base64.b64encode(buf.tobytes()).decode()
+    except Exception:
+        pass
+    desc = "PISCINA: uma pessoa SUMIU dentro da agua ha ~%ds e NAO reapareceu (nao saiu pela borda) - possivel afogamento" % int(gone)
+    print("[piscina] %s: PESSOA SUMIU (track %s) ~%ds" % (cam.get("nome", ""), t.get("id"), int(gone)))
+    envia_alerta(cam, "afogamento", 0.9, desc, img_b64, verificado=True)
+
+
+def _pisc_person_check(cam, cid, inwater, agua, frame_bgr, W, H, now):
+    """Rastreio POR PESSOA (piscina CHEIA): cada pessoa na agua vira um track. Se um track INTERIOR
+    (nao na borda = nao saiu andando) some por PISCINA_SUBMERSO_SEC sem reaparecer, e ja tinha
+    >= PISCINA_MIN_HITS deteccoes (nao e fantasma), dispara marcando a pessoa/lugar."""
+    tracks = _pisc_ptracks.get(cid) or []
+    used = [False] * len(tracks)
+    novos = []
+    for (fx, fy, p) in inwater:
+        best, bestd = -1, PISCINA_TRACK_TOL
+        for i, tk in enumerate(tracks):
+            if used[i]:
+                continue
+            d = ((fx - tk["cx"]) ** 2 + (fy - tk["cy"]) ** 2) ** 0.5
+            if d <= bestd:
+                bestd, best = d, i
+        interior = _interior_pt(fx, fy, agua, PISCINA_BORDA)
+        crop = _crop_person(frame_bgr, p, W, H)
+        if best >= 0:
+            tk = tracks[best]; used[best] = True
+            tk["cx"] = fx; tk["cy"] = fy; tk["last"] = now; tk["hits"] += 1
+            tk["interior"] = interior; tk["alerted"] = False
+            if crop is not None:
+                tk["crop"] = crop
+        else:
+            _pisc_ptid[cid] = _pisc_ptid.get(cid, 0) + 1
+            novos.append({"id": _pisc_ptid[cid], "cx": fx, "cy": fy, "first": now, "last": now,
+                          "hits": 1, "interior": interior, "alerted": False, "crop": crop})
+    keep = []
+    for i, tk in enumerate(tracks):
+        if used[i]:
+            keep.append(tk); continue
+        gone = now - tk["last"]
+        if (tk["interior"] and not tk["alerted"] and tk["hits"] >= PISCINA_MIN_HITS
+                and gone >= PISCINA_SUBMERSO_SEC
+                and (now - _pisc_ultimo.get(cid, 0) >= PISCINA_COOLDOWN)):
+            tk["alerted"] = True; _pisc_ultimo[cid] = now
+            _pisc_alerta_pessoa(cam, agua, frame_bgr, W, H, tk, gone, now)
+        if gone <= PISCINA_SUBMERSO_SEC + 120:
+            keep.append(tk)
+    _pisc_ptracks[cid] = keep + novos
+
+
+GUARDA_CONFIRM_SEC = float(os.getenv("GUARDA_CONFIRM_SEC", "2").replace(",", "."))  # presenca confirmada por Xs -> alerta
+GUARDA_COOLDOWN    = int(os.getenv("GUARDA_COOLDOWN", "60"))
+_GUARDA_ANIMAIS = {"dog", "cat", "bird", "horse", "sheep", "cow", "bear", "cachorro", "gato", "animal", "pet"}
+_guarda_state = {}   # cid -> {since, last, alerted}
+_guarda_dbg = {}     # cid -> ts do ultimo debug
+
+
+def _guarda_alerta(cam, agua, frame_bgr, W, H, p, tipo_intruso, now):
+    import numpy as _np
+    img_b64 = None
+    try:
+        an = frame_bgr.copy()
+        cv2.polylines(an, [_np.array([(int(px * W), int(py * H)) for px, py in agua], dtype=_np.int32)], True, (255, 0, 0), 2)
+        bx = float(p.get("x", 0)); by = float(p.get("y", 0)); bw = float(p.get("width", 40)); bh = float(p.get("height", 40))
+        x1 = max(0, int(bx - bw / 2)); y1 = max(0, int(by - bh / 2)); x2 = min(W, int(bx + bw / 2)); y2 = min(H, int(by + bh / 2))
+        cv2.rectangle(an, (x1, y1), (x2, y2), (0, 0, 255), 3)
+        cv2.putText(an, "GUARDA-PISCINA", (max(0, x1 - 8), max(26, y1 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        ok, buf = cv2.imencode(".jpg", an)
+        if ok:
+            img_b64 = base64.b64encode(buf.tobytes()).decode()
+    except Exception:
+        pass
+    desc = "GUARDA-PISCINA: %s entrou na piscina (que deveria estar vazia)" % tipo_intruso
+    print("[guarda] %s: %s na piscina (armado)" % (cam.get("nome", ""), tipo_intruso))
+    envia_alerta(cam, "guarda_piscina", 0.9, desc, img_b64, verificado=True)
+
+
+def _guarda_check(cam, predictions, frame_bgr, now):
+    """Guarda-piscina (piscina que deveria estar VAZIA, armavel pelo cliente): quando ARMADO,
+    pessoa OU animal na zona de agua (confirmado GUARDA_CONFIRM_SEC) -> alerta imediato marcando o intruso."""
+    if frame_bgr is None or not _tipo_ativo_na_cam(cam, "guarda_piscina", now):
+        return
+    if not (cam.get("config_analitico") or {}).get("guarda_armado"):
+        return
+    agua = None
+    for z in (cam.get("config_analitico") or {}).get("zonas_intrusao", []) or []:
+        if z.get("tipo") == "agua" and len(z.get("pontos") or []) >= 3:
+            agua = z["pontos"]; break
+    if not agua:
+        return
+    preds = predictions.get("predictions", []) if isinstance(predictions, dict) else []
+    H, W = frame_bgr.shape[:2]
+    cid = cam.get("id")
+    alvo, tipo_intruso = None, None
+    inwater = [(fx, fy, p) for (fx, fy, p) in _person_pts(preds, W, H) if _pt_in_poly(fx, fy, agua)]
+    if inwater:
+        alvo = inwater[0][2]; tipo_intruso = "pessoa"
+    else:
+        for p in preds:
+            cls = str(p.get("class", "")).lower()
+            if CLASS_MAP.get(cls) == "animal" or cls in _GUARDA_ANIMAIS:
+                fx = float(p.get("x", 0)) / (W or 1); fy = (float(p.get("y", 0)) + float(p.get("height", 0)) / 2.0) / (H or 1)
+                if _pt_in_poly(fx, fy, agua):
+                    alvo = p; tipo_intruso = "animal"; break
+    st = _guarda_state.get(cid) or {"since": 0.0, "last": 0.0, "alerted": 0.0}
+    if alvo:
+        if not st["since"] or (now - st.get("last", 0)) > 5:   # nova presenca (1a vez ou apos gap > 5s)
+            st["since"] = now
+        st["last"] = now
+        if (now - st["since"] >= GUARDA_CONFIRM_SEC) and (now - st.get("alerted", 0) >= GUARDA_COOLDOWN):
+            st["alerted"] = now
+            _guarda_alerta(cam, agua, frame_bgr, W, H, alvo, tipo_intruso, now)
+    else:
+        if st.get("last") and (now - st["last"]) > 5:   # sumiu de vez -> zera a presenca
+            st["since"] = 0.0
+    _guarda_state[cid] = st
+    if PISCINA_DEBUG and now - _guarda_dbg.get(cid, 0) >= 2:
+        _guarda_dbg[cid] = now
+        print("[guarda-dbg] %s | alvo=%s | presente_ha=%.0fs" % (cam.get("nome", ""), tipo_intruso or "-", (now - st["since"]) if (alvo and st.get("since")) else 0))
+
+
+# ---------- DETECTOR DE SUSPEITOS - FASE 1 (Camada 1): merodeio / permanencia por pessoa ----------
+SUSP_DWELL_SEC = float(os.getenv("SUSP_DWELL_SEC", "60").replace(",", "."))   # permanencia continua -> alerta
+SUSP_MIN_HITS  = int(os.getenv("SUSP_MIN_HITS", "6"))                          # deteccoes minimas (nao e fantasma)
+SUSP_COOLDOWN  = int(os.getenv("SUSP_COOLDOWN", "120"))                        # 1 alerta por camera a cada Xs
+SUSP_TRACK_TOL = float(os.getenv("SUSP_TRACK_TOL", "0.12").replace(",", "."))  # dist (frac) p/ casar pessoa->track
+SUSP_GAP_SEC   = float(os.getenv("SUSP_GAP_SEC", "5").replace(",", "."))       # some por > Xs -> track encerrado
+_susp_tracks = {}   # cid -> [ {id,cx,cy,first,last,hits,alerted,crop} ]
+_susp_tid = {}      # cid -> contador de ids
+_susp_ultimo = {}   # cid -> ts do ultimo alerta
+_susp_dbg = {}      # cid -> ts do ultimo debug
+
+
+SUSP_GEMINI_ON = os.getenv("SUSP_GEMINI_ON", "1") not in ("0", "false", "False", "")
+
+
+def gemini_suspeito(crop_jpg, nome, dwell_secs=0):
+    """Fase 2 do detector de suspeitos. Retorna (veredito, motivo):
+    veredito True=suspeito, False=normal, None=Gemini indisponivel/erro (=> fallback Camada 1).
+    Anti-vies: julga SO a acao (ignora idade/genero/cor). Temperatura 0."""
+    if not USE_GEMINI or not GEMINI_KEY or not crop_jpg:
+        return None, ""
+    global _gem_fails, _gem_open_until, _gem_down
+    if _gem_open_until and time.time() < _gem_open_until:
+        return None, ""
+    prompt = ('Camera de seguranca "' + str(nome) + '". A pessoa no CIRCULO VERMELHO esta ha cerca de '
+              + str(int(dwell_secs)) + ' segundos parada ou rondando nesta area. Analise SOMENTE o COMPORTAMENTO/ACAO '
+              '(IGNORE idade, genero, cor da pele e roupa como fator; foque so na acao). A pessoa demonstra comportamento '
+              'suspeito: merodeio (rondar/vigiar o local, ir e voltar, observar entradas/vitrine), ocultacao de objeto '
+              '(guardar algo no corpo/bolsa de forma furtiva), tentativa de arrombamento/pulo de muro, ou permanencia sem '
+              'proposito claro em local/horario incomum? NAO alarme para: pessoa trabalhando, esperando (fila/ponto de onibus), '
+              'conversando, mexendo no celular, cliente escolhendo produto normalmente, ou funcionario. Na duvida responda '
+              'suspeito=false. Responda SO JSON: {"suspeito": true/false, "categoria": "merodeio|ocultacao|arrombamento|permanencia|normal", "descricao": "1 frase do que a pessoa faz"}')
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_KEY}"
+    try:
+        r = requests.post(url, timeout=20, json={
+            "contents": [{"parts": [{"text": prompt},
+                          {"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(crop_jpg).decode()}}]}],
+            "generationConfig": {"response_mime_type": "application/json", "temperature": 0}})
+        if r.status_code == 429:
+            raise RuntimeError("429")
+        d = json.loads(r.json()["candidates"][0]["content"]["parts"][0]["text"])
+        _gem_fails = 0; _gem_open_until = 0.0; _gem_down = False
+        cat = str(d.get("categoria", "") or ""); dsc = str(d.get("descricao", "") or "")
+        motivo = ((cat + ": " + dsc).strip(": ").strip()) if (cat or dsc) else "confirmado"
+        return bool(d.get("suspeito")), motivo
+    except Exception as e:
+        _gem_fails += 1
+        if ("429" in str(e)) or _gem_fails >= GEMINI_CB_FAILS:
+            _gem_open_until = time.time() + GEMINI_CB_COOLDOWN; _gem_down = True
+        return None, ""
+
+
+def _susp_alerta(cam, area, frame_bgr, W, H, tk, dwell, now):
+    import numpy as _np
+    px, py = int(tk["cx"] * W), int(tk["cy"] * H)
+    # --- Fase 2: confirma o COMPORTAMENTO com Gemini (anti-vies; so acao) ---
+    verif, extra = True, ""
+    if SUSP_GEMINI_ON:
+        try:
+            g = frame_bgr.copy()
+            if area:
+                cv2.polylines(g, [_np.array([(int(qx * W), int(qy * H)) for qx, qy in area], dtype=_np.int32)], True, (0, 165, 255), 2)
+            cv2.circle(g, (px, py), 30, (0, 0, 255), 4)
+            okg, bg = cv2.imencode(".jpg", g)
+            if okg:
+                sus, motivo = gemini_suspeito(bg.tobytes(), cam.get("nome", ""), dwell)
+                if sus is True:
+                    extra = " [IA-visao: " + (motivo or "confirmado") + "]"
+                elif sus is False:
+                    verif = False
+                    extra = " [IA-visao: sem indicio claro" + ((" - " + motivo) if motivo else "") + " - em revisao]"
+                else:
+                    extra = " [IA-visao indisponivel]"
+        except Exception as _e:
+            print("[suspeito] gemini:", _e)
+    # --- imagem do alerta ---
+    img_b64 = None
+    try:
+        an = frame_bgr.copy()
+        if area:
+            cv2.polylines(an, [_np.array([(int(qx * W), int(qy * H)) for qx, qy in area], dtype=_np.int32)], True, (0, 165, 255), 2)
+        cv2.circle(an, (px, py), 30, (0, 0, 255), 4)
+        cv2.putText(an, "PERMANENCIA ~%ds" % int(dwell), (max(0, px - 96), max(26, py - 42)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        crop = tk.get("crop")
+        if crop is not None and getattr(crop, "size", 0) > 0:
+            ih = 130; iw = max(46, min(int(crop.shape[1] * ih / max(1, crop.shape[0])), 190))
+            th = cv2.resize(crop, (iw, ih))
+            an[10:10 + ih, 10:10 + iw] = th
+            cv2.rectangle(an, (10, 10), (10 + iw, 10 + ih), (0, 0, 255), 3)
+            cv2.putText(an, "pessoa", (10, 10 + ih + 17), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+        ok, buf = cv2.imencode(".jpg", an)
+        if ok:
+            img_b64 = base64.b64encode(buf.tobytes()).decode()
+    except Exception as _e:
+        print("[suspeito] desenho:", _e)
+    desc = "COMPORTAMENTO SUSPEITO: pessoa em permanencia/merodeio ha ~%ds na area vigiada (assistivo - revisar)%s" % (int(dwell), extra)
+    print("[suspeito] %s: merodeio (track %s) ~%ds verif=%s" % (cam.get("nome", ""), tk.get("id"), int(dwell), verif))
+    envia_alerta(cam, "suspeito", 0.85, desc, img_b64, verificado=verif)
+
+
+SUSP_OCULT_SEC = float(os.getenv("SUSP_OCULT_SEC", "12").replace(",", "."))     # presenca minima p/ checar ocultacao
+SUSP_OCULT_COOLDOWN = int(os.getenv("SUSP_OCULT_COOLDOWN", "25"))               # 1 chamada Gemini-furto por camera a cada Xs
+_furto_ultimo = {}   # cid -> ts da ultima chamada gemini_furto
+
+
+def gemini_furto(crop_jpg, nome):
+    """Fase 3: True se a pessoa (RECORTE) esconde/guarda produto de forma furtiva.
+    Tri-estado (True/False/None=indisponivel). Anti-vies: so a acao das maos/objeto."""
+    if not USE_GEMINI or not GEMINI_KEY or not crop_jpg:
+        return None, ""
+    global _gem_fails, _gem_open_until, _gem_down
+    if _gem_open_until and time.time() < _gem_open_until:
+        return None, ""
+    prompt = ('Camera de seguranca de loja/varejo "' + str(nome) + '". A imagem e o RECORTE de UMA pessoa. '
+              'Ela esta ESCONDENDO/GUARDANDO um produto ou objeto de forma FURTIVA - enfiando no bolso, na cintura, '
+              'por dentro da roupa, dentro da mochila/bolsa, ou sob uma peca de roupa? Foque SO na ACAO das maos/objeto '
+              '(IGNORE idade, genero, cor da pele e roupa como fator). NAO alarme para: segurar/olhar um produto normal, '
+              'mexer no celular, guardar a propria carteira/chave/celular, ou por compras numa sacola de compras. '
+              'Na duvida responda ocultacao=false. Responda SO JSON: {"ocultacao": true/false, "descricao": "1 frase"}')
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_KEY}"
+    try:
+        r = requests.post(url, timeout=20, json={
+            "contents": [{"parts": [{"text": prompt},
+                          {"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(crop_jpg).decode()}}]}],
+            "generationConfig": {"response_mime_type": "application/json", "temperature": 0}})
+        if r.status_code == 429:
+            raise RuntimeError("429")
+        d = json.loads(r.json()["candidates"][0]["content"]["parts"][0]["text"])
+        _gem_fails = 0; _gem_open_until = 0.0; _gem_down = False
+        return bool(d.get("ocultacao")), str(d.get("descricao", "") or "")
+    except Exception as e:
+        _gem_fails += 1
+        if ("429" in str(e)) or _gem_fails >= GEMINI_CB_FAILS:
+            _gem_open_until = time.time() + GEMINI_CB_COOLDOWN; _gem_down = True
+        return None, ""
+
+
+def _furto_alerta(cam, area, frame_bgr, W, H, tk, motivo, now):
+    import numpy as _np
+    px, py = int(tk["cx"] * W), int(tk["cy"] * H)
+    img_b64 = None
+    try:
+        an = frame_bgr.copy()
+        if area:
+            cv2.polylines(an, [_np.array([(int(qx * W), int(qy * H)) for qx, qy in area], dtype=_np.int32)], True, (0, 165, 255), 2)
+        cv2.circle(an, (px, py), 30, (0, 0, 255), 4)
+        cv2.putText(an, "OCULTACAO?", (max(0, px - 72), max(26, py - 42)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        crop = tk.get("crop")
+        if crop is not None and getattr(crop, "size", 0) > 0:
+            ih = 150; iw = max(46, min(int(crop.shape[1] * ih / max(1, crop.shape[0])), 210))
+            th = cv2.resize(crop, (iw, ih))
+            an[10:10 + ih, 10:10 + iw] = th
+            cv2.rectangle(an, (10, 10), (10 + iw, 10 + ih), (0, 0, 255), 3)
+            cv2.putText(an, "pessoa", (10, 10 + ih + 17), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+        ok, buf = cv2.imencode(".jpg", an)
+        if ok:
+            img_b64 = base64.b64encode(buf.tobytes()).decode()
+    except Exception as _e:
+        print("[furto] desenho:", _e)
+    desc = "POSSIVEL FURTO/OCULTACAO: pessoa aparenta esconder produto/objeto no corpo/bolsa (assistivo - revisar) [IA-visao: %s]" % (motivo or "confirmado")
+    print("[furto] %s: ocultacao (track %s)" % (cam.get("nome", ""), tk.get("id")))
+    envia_alerta(cam, "suspeito", 0.85, desc, img_b64, verificado=True)
+
+
+def _susp_check(cam, predictions, frame_bgr, now):
+    """Fase 1 (Camada 1) do detector de suspeitos: rastreia cada pessoa na area vigiada
+    (zona tipo 'vigilancia' desenhada, ou o frame inteiro) e, se uma pessoa permanece
+    de forma continua (tolerante a gap) por >= SUSP_DWELL_SEC, dispara alerta ASSISTIVO
+    marcando a pessoa. Respeita o horario do analitico. Sem vies: so geometria + tempo."""
+    susp_on = _tipo_ativo_na_cam(cam, "suspeito", now)
+    furto_on = _tipo_ativo_na_cam(cam, "furto", now)
+    if frame_bgr is None or not (susp_on or furto_on):
+        return
+    area = None
+    for z in (cam.get("config_analitico") or {}).get("zonas_intrusao", []) or []:
+        if z.get("tipo") == "vigilancia" and len(z.get("pontos") or []) >= 3:
+            area = z["pontos"]; break
+    preds = predictions.get("predictions", []) if isinstance(predictions, dict) else []
+    H, W = frame_bgr.shape[:2]
+    cid = cam.get("id")
+    persons = [(fx, fy, p) for (fx, fy, p) in _person_pts(preds, W, H) if (area is None or _pt_in_poly(fx, fy, area))]
+    tracks = _susp_tracks.get(cid) or []
+    used = [False] * len(tracks)
+    novos = []
+    for (fx, fy, p) in persons:
+        best, bestd = -1, SUSP_TRACK_TOL
+        for i, tk in enumerate(tracks):
+            if used[i]:
+                continue
+            d = ((fx - tk["cx"]) ** 2 + (fy - tk["cy"]) ** 2) ** 0.5
+            if d <= bestd:
+                bestd, best = d, i
+        crop = _crop_person(frame_bgr, p, W, H)
+        if best >= 0:
+            tk = tracks[best]; used[best] = True
+            tk["cx"] = fx; tk["cy"] = fy; tk["last"] = now; tk["hits"] += 1
+            if crop is not None:
+                tk["crop"] = crop
+            dwell = now - tk["first"]
+            if (susp_on and not tk["alerted"] and tk["hits"] >= SUSP_MIN_HITS and dwell >= SUSP_DWELL_SEC
+                    and (now - _susp_ultimo.get(cid, 0) >= SUSP_COOLDOWN)):
+                tk["alerted"] = True; _susp_ultimo[cid] = now
+                _susp_alerta(cam, area, frame_bgr, W, H, tk, dwell, now)
+        else:
+            _susp_tid[cid] = _susp_tid.get(cid, 0) + 1
+            novos.append({"id": _susp_tid[cid], "cx": fx, "cy": fy, "first": now, "last": now,
+                          "hits": 1, "alerted": False, "crop": crop})
+    keep = [tk for i, tk in enumerate(tracks) if used[i] or (now - tk["last"] <= SUSP_GAP_SEC)]
+    _susp_tracks[cid] = keep + novos
+    # --- Fase 3: ocultacao / furto (varejo) - Gemini no recorte da pessoa, custo limitado por camera ---
+    if furto_on and (now - _furto_ultimo.get(cid, 0) >= SUSP_OCULT_COOLDOWN):
+        cand = None
+        for tk in _susp_tracks[cid]:
+            if tk.get("furto_alerted") or (now - tk["last"]) > SUSP_GAP_SEC:
+                continue
+            if (now - tk["first"]) < SUSP_OCULT_SEC or tk.get("crop") is None:
+                continue
+            if cand is None or tk["first"] < cand["first"]:
+                cand = tk
+        if cand is not None:
+            _furto_ultimo[cid] = now
+            try:
+                okf, bf = cv2.imencode(".jpg", cand["crop"])
+                if okf:
+                    oc, motivo = gemini_furto(bf.tobytes(), cam.get("nome", ""))
+                    if oc is True:
+                        cand["furto_alerted"] = True
+                        _furto_alerta(cam, area, frame_bgr, W, H, cand, motivo, now)
+            except Exception as _e:
+                print("[furto] erro:", _e)
+    if PISCINA_DEBUG and now - _susp_dbg.get(cid, 0) >= 2:
+        _susp_dbg[cid] = now
+        _td = " ".join("t%s(h=%d dwell=%.0f)" % (x["id"], x["hits"], now - x["first"]) for x in _susp_tracks[cid][:6])
+        print("[suspeito-dbg] %s | area=%s | pessoas=%d | tracks=%d %s" % (cam.get("nome", ""), "zona" if area else "frame", len(persons), len(_susp_tracks[cid]), _td))
+
+
 def _piscina_check(cam, predictions, frame_bgr, now):
     if frame_bgr is None or not _tipo_ativo_na_cam(cam, "piscina", now):
         return
@@ -825,11 +1223,17 @@ def _piscina_check(cam, predictions, frame_bgr, now):
             _pisc_submerso(cam, cid, inwater, agua, frame_bgr, W, H, now)
         except Exception as _e:
             print("[piscina-sub] erro:", _e)
+        try:
+            _pisc_person_check(cam, cid, inwater, agua, frame_bgr, W, H, now)
+        except Exception as _e:
+            print("[piscina-pessoa] erro:", _e)
     if PISCINA_DEBUG and now - _pisc_dbg_last.get(cid, 0) >= 2:
         _pisc_dbg_last[cid] = now
         _p = _pisc_pres.get(cid)
         _pd = ("hits=%d gone=%.0f alert=%s" % (_p["hits_int"], now - _p["last_any"], _p["alerted"])) if _p else "-"
-        print("[piscina-dbg] %s | inwater=%d | pres[%s]" % (cam.get("nome", ""), len(inwater), _pd))
+        _tk = _pisc_ptracks.get(cid) or []
+        _td = " ".join("t%s(int=%s h=%d gone=%.0f)" % (x["id"], x["interior"], x["hits"], now - x["last"]) for x in _tk[:6])
+        print("[piscina-dbg] %s | inwater=%d | pres[%s] | tracks=%d %s" % (cam.get("nome", ""), len(inwater), _pd, len(_tk), _td))
     if not inwater:
         _pisc[cid] = {"last_check": st.get("last_check", 0), "centroid": None, "still_since": now}
         return
@@ -874,6 +1278,119 @@ def _piscina_check(cam, predictions, frame_bgr, now):
     envia_alerta(cam, "afogamento", 0.9, "PISCINA (auxilio): possivel afogamento - " + (desc or ""), img_b64, verificado=True)
 
 
+# ================= CONTROLE DE ACESSO FACIAL (YuNet + SFace, on-prem) =================
+_FACE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "face")
+FACIAL_MIN_PX    = int(os.getenv("FACIAL_MIN_PX", "80"))          # rosto menor que isso: NAO decide (evita chute)
+FACIAL_DET_SCORE = float(os.getenv("FACIAL_DET_SCORE", "0.5").replace(",", "."))
+FACIAL_THR       = float(os.getenv("FACIAL_COSINE_THR", "0.363").replace(",", "."))
+FACIAL_CHECK_SEC = float(os.getenv("FACIAL_CHECK_SEC", "1.0").replace(",", "."))   # ~1 verificacao/seg
+FACIAL_CONFIRM   = int(os.getenv("FACIAL_CONFIRM", "3"))          # nº de verificacoes p/ confirmar (nunca 1 quadro)
+FACIAL_COOLDOWN  = int(os.getenv("FACIAL_COOLDOWN", "60"))        # 1 evento por "slot" a cada Xs
+FACIAL_GAL_TTL   = int(os.getenv("FACIAL_GAL_TTL", "120"))        # recarrega a galeria da camera a cada Xs
+_face_det = None
+_face_rec = None
+_face_gal = {}     # cid -> {"t": ts, "g": {nome: [emb np(1,128), ...]}}
+_face_state = {}   # cid -> {"last": ts, "seen": {slot: n}, "alerted": {slot: ts}}
+
+
+def _face_models():
+    global _face_det, _face_rec
+    if _face_det is None:
+        y = os.path.join(_FACE_DIR, "yunet.onnx"); s = os.path.join(_FACE_DIR, "sface.onnx")
+        _face_det = cv2.FaceDetectorYN.create(y, "", (320, 320), score_threshold=FACIAL_DET_SCORE)
+        _face_rec = cv2.FaceRecognizerSF.create(s, "")
+    return _face_det, _face_rec
+
+
+def _face_gallery(cid):
+    import numpy as _np
+    ent = _face_gal.get(cid)
+    if ent and time.time() - ent["t"] < FACIAL_GAL_TTL:
+        return ent["g"]
+    g = {}
+    p = os.path.join(_FACE_DIR, "galleries", str(cid) + ".json")
+    try:
+        if os.path.exists(p):
+            raw = json.load(open(p))
+            for nome, embs in raw.items():
+                g[nome] = [_np.array(e, dtype=_np.float32).reshape(1, -1) for e in embs]
+    except Exception as e:
+        print("[facial] galeria erro:", e)
+    _face_gal[cid] = {"t": time.time(), "g": g}
+    return g
+
+
+def _facial_alerta(cam, frame_bgr, face, tipo, desc, verificado):
+    img_b64 = None
+    try:
+        an = frame_bgr.copy()
+        x, y, w, h = int(face[0]), int(face[1]), int(face[2]), int(face[3])
+        cor = (0, 0, 255) if verificado else (0, 200, 0)
+        cv2.rectangle(an, (x, y), (x + w, y + h), cor, 3)
+        okA, bufA = cv2.imencode(".jpg", an)
+        if okA:
+            img_b64 = base64.b64encode(bufA.tobytes()).decode()
+    except Exception:
+        pass
+    envia_alerta(cam, tipo, 0.9, desc, img_b64, verificado=verificado)
+
+
+def _facial_check(cam, frame_bgr, now):
+    """Controle de acesso facial: detecta TODOS os rostos >= FACIAL_MIN_PX, compara com a galeria
+    da camera; confirma em varios quadros; reconhecido -> registra; desconhecido -> alerta plantao."""
+    if frame_bgr is None or not _tipo_ativo_na_cam(cam, "facial", now):
+        return
+    cid = cam.get("id")
+    st = _face_state.get(cid) or {"last": 0.0, "seen": {}, "alerted": {}}
+    if now - st["last"] < FACIAL_CHECK_SEC:
+        return
+    st["last"] = now; _face_state[cid] = st
+    det, rec = _face_models()
+    gal = _face_gallery(cid)
+    H, W = frame_bgr.shape[:2]
+    try:
+        det.setInputSize((W, H))
+        _, faces = det.detect(frame_bgr)
+    except Exception as e:
+        print("[facial] detect erro:", e); return
+    if faces is None:
+        faces = []
+    achou = {}   # slot -> face representativa (avalia TODOS os rostos do quadro)
+    for f in faces:
+        if float(f[2]) < FACIAL_MIN_PX:   # rosto pequeno demais -> nao decide
+            continue
+        try:
+            feat = rec.feature(rec.alignCrop(frame_bgr, f))
+        except Exception:
+            continue
+        best_nome, best = None, 0.0
+        for nome, embs in gal.items():
+            for e in embs:
+                sc = rec.match(feat, e, cv2.FaceRecognizerSF_FR_COSINE)
+                if sc > best:
+                    best = sc; best_nome = nome
+        slot = ("known:" + best_nome) if best >= FACIAL_THR else "unknown"
+        achou[slot] = f
+    seen = st["seen"]
+    for slot, f in achou.items():
+        seen[slot] = seen.get(slot, 0) + 1
+        if seen[slot] >= FACIAL_CONFIRM and (now - st["alerted"].get(slot, 0) >= FACIAL_COOLDOWN):
+            st["alerted"][slot] = now
+            if slot.startswith("known:"):
+                nome = slot.split(":", 1)[1]
+                print("[facial] %s: ACESSO reconhecido -> %s" % (cam.get("nome", ""), nome))
+                _facial_alerta(cam, frame_bgr, f, "acesso_facial", "Acesso reconhecido: " + nome, verificado=False)
+            else:
+                print("[facial] %s: pessoa DESCONHECIDA na portaria" % (cam.get("nome", "")))
+                _facial_alerta(cam, frame_bgr, f, "facial_desconhecido", "Pessoa NAO reconhecida (controle de acesso)", verificado=True)
+    for k in list(seen.keys()):   # decai slots ausentes neste ciclo
+        if k not in achou:
+            seen[k] = seen[k] - 1
+            if seen[k] <= 0:
+                del seen[k]
+    st["seen"] = seen; _face_state[cid] = st
+
+
 def _process(predictions, video_frame):
     idx = getattr(video_frame, "source_id", 0) or 0
     cam = cam_by_idx.get(idx)
@@ -904,6 +1421,21 @@ def _process(predictions, video_frame):
         _piscina_check(cam, predictions, video_frame.image, time.time())
     except Exception as e:
         print("[piscina] erro:", e)
+    # CONTROLE DE ACESSO FACIAL: reconhece cadastrados / alerta desconhecido (portaria)
+    try:
+        _facial_check(cam, video_frame.image, time.time())
+    except Exception as e:
+        print("[facial] erro:", e)
+    # GUARDA-PISCINA: piscina que deveria estar vazia + armada -> pessoa/animal na agua
+    try:
+        _guarda_check(cam, predictions, video_frame.image, time.time())
+    except Exception as e:
+        print("[guarda] erro:", e)
+    # DETECTOR DE SUSPEITOS (Fase 1): merodeio/permanencia de pessoa na area vigiada
+    try:
+        _susp_check(cam, predictions, video_frame.image, time.time())
+    except Exception as e:
+        print("[suspeito] erro:", e)
 
     # MOVIMENTO: roda por frame, so no processo pai (evita duplicar nos filhos fogo/placa)
     if IS_PARENT and MOTION_ATIVO:

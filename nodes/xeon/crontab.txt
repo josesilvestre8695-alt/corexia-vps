@@ -1,0 +1,2 @@
+* * * * * /home/corexia/corexia-ia/env/bin/python /home/corexia/corexia-ia/face/enroll_worker.py >> /tmp/enroll_worker.log 2>&1
+*/5 * * * * /home/corexia/corexia-ia/watch_vps.sh >> /tmp/watch_vps.log 2>&1
