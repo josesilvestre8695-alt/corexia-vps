@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Câmeras</title>
+<style>
+:root{--bg:#0b0d12;--surface:#12151c;--surface2:#171b24;--ink:#e6eaf0;--muted:#8b95a7;--border:#232a35;--accent:#f97316;--ok:#34d399;--bad:#f87171;--nav-h:64px}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+body{min-height:100svh}
+button{font-family:inherit;cursor:pointer}
+.hide{display:none!important}
+.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;padding:calc(env(safe-area-inset-top) + 10px) max(12px,env(safe-area-inset-right)) 10px max(12px,env(safe-area-inset-left));background:rgba(11,13,18,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.brand{display:flex;align-items:center;gap:8px;font-weight:800;letter-spacing:.3px}
+.brand img{height:24px;width:auto;display:block}
+.brand .accent{color:var(--accent)}
+.top .sp{flex:1}
+.iconbtn{background:var(--surface2);border:1px solid var(--border);color:var(--ink);border-radius:9px;padding:8px 12px;font-size:13px}
+.iconbtn:active{background:var(--surface)}
+.wrap{padding:12px max(12px,env(safe-area-inset-right)) calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px) max(12px,env(safe-area-inset-left))}
+.count{color:var(--muted);font-size:12.5px;margin:2px 2px 12px}
+.back{display:inline-flex;align-items:center;gap:6px;background:var(--surface2);border:1px solid var(--border);color:var(--ink);border-radius:9px;padding:8px 12px;font-size:13px;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.tile{background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;cursor:pointer;transition:transform .08s}
+.tile:active{transform:scale(.985)}
+.tile .thumb{position:relative;aspect-ratio:16/9;background:#05070a}
+.tile .thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.tile .thumb .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px}
+.tile .thumb .play{position:absolute;right:8px;bottom:8px;width:30px;height:30px;border-radius:50%;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff}
+.tile .nm{padding:8px 11px;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.msg{color:var(--muted);font-size:14px;padding:30px 4px;text-align:center}
+.msg.err{color:var(--bad)}
+.mrow{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:14px;cursor:pointer;margin-bottom:10px}
+.mrow:active{background:var(--surface2)}.mrow b{font-size:15px}.mrow span{color:var(--muted);font-size:12px}
+.alist{display:flex;flex-direction:column;gap:10px}
+.arow{display:flex;gap:11px;background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:10px;cursor:pointer;align-items:center}
+.arow:active{background:var(--surface2)}
+.arow .ath{width:78px;height:52px;border-radius:9px;object-fit:cover;background:#05070a;flex:none}
+.arow .ai{min-width:0;flex:1}
+.arow .at{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.badge{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:rgba(249,115,22,.16);color:var(--accent);border:1px solid rgba(249,115,22,.35)}
+.badge.q{background:rgba(139,149,167,.14);color:var(--muted);border-color:var(--border)}
+.arow .acam{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arow .ad{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.arow .ah{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap;align-self:flex-start}
+.ctrl{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
+.sel{background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--ink);padding:12px;font-size:15px;width:100%}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{font-size:12.5px;padding:7px 13px;border-radius:999px;border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer}
+.chip.on{background:rgba(249,115,22,.16);border-color:var(--accent);color:#ffd6b0}
+.rrow{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:12px 14px;cursor:pointer}
+.rrow:active{background:var(--surface2)}.rrow b{font-variant-numeric:tabular-nums}.rrow span{color:var(--muted);font-size:12px}
+.login{max-width:360px;margin:0 auto;padding:calc(env(safe-area-inset-top) + 8vh) 20px 20px}
+.login h1{font-size:22px;margin:0 0 4px}.login h1 .accent{color:var(--accent)}
+.login p{color:var(--muted);font-size:13.5px;margin:0 0 20px}
+.fld{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.fld label{font-size:12px;color:var(--muted)}
+.fld input{background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--ink);padding:13px 14px;font-size:16px}
+.fld input:focus{outline:none;border-color:var(--accent)}
+.btn{width:100%;background:var(--accent);color:#160d03;border:none;border-radius:11px;padding:14px;font-size:15px;font-weight:700}
+.btn:disabled{opacity:.55}
+.btn.ghost{background:var(--surface2);color:var(--ink);border:1px solid var(--border)}
+.sechd{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:20px 2px 10px}
+.grow{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:11px 13px;margin-bottom:8px}
+.tgl{border:none;border-radius:8px;padding:8px 13px;font-weight:700;font-size:13px;color:#fff}
+.tgl.on{background:#238636}.tgl.off{background:#30363d}
+.nav{position:fixed;left:0;right:0;bottom:0;z-index:8;display:flex;background:rgba(11,13,18,.96);backdrop-filter:blur(8px);border-top:1px solid var(--border);padding-bottom:env(safe-area-inset-bottom)}
+.nav button{flex:1;background:none;border:none;color:var(--muted);padding:9px 4px 8px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10.5px}
+.nav button .ic{font-size:19px;line-height:1}
+.nav button.on{color:var(--accent)}
+.ov{position:fixed;inset:0;z-index:50;background:#000;display:flex;flex-direction:column}
+.ov .ovhd{display:flex;align-items:center;gap:10px;padding:calc(env(safe-area-inset-top) + 10px) max(12px,env(safe-area-inset-right)) 10px max(12px,env(safe-area-inset-left));background:rgba(0,0,0,.55)}
+.ov .ovnm{flex:1;font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ov .ovx{background:rgba(255,255,255,.14);border:none;color:#fff;border-radius:9px;padding:9px 14px;font-size:14px;font-weight:700}
+.ov .ovbody{flex:1;position:relative;min-height:0;background:#000;display:flex;align-items:center;justify-content:center}
+.ov .ovbody iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000}
+.ov .ovbody video{width:100%;height:100%;object-fit:contain;background:#000}
+.ov .ovbody img{max-width:100%;max-height:100%;object-fit:contain}
+.ov .ovload{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:14px;pointer-events:none}
+/* conta = overlay com fundo do app (scroll) */
+.conta{position:fixed;inset:0;z-index:52;background:var(--bg);overflow:auto;-webkit-overflow-scrolling:touch}
+.conta .ch{position:sticky;top:0;display:flex;align-items:center;gap:10px;padding:calc(env(safe-area-inset-top) + 12px) 16px 12px;background:var(--bg);border-bottom:1px solid var(--border)}
+.conta .cb{max-width:520px;margin:0 auto;padding:16px max(14px,env(safe-area-inset-left)) calc(env(safe-area-inset-bottom) + 30px)}
+.spin{width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;display:inline-block;animation:sp .8s linear infinite;vertical-align:-3px;margin-right:8px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.bigbtn{width:100%;display:flex;flex-direction:column;align-items:flex-start;gap:2px;background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:14px;color:var(--ink);text-align:left;margin-bottom:16px;cursor:pointer}
+.bigbtn:active{background:var(--surface2)}.bigbtn b{font-weight:700;font-size:15px}.bigbtn small{color:var(--muted);font-size:12px}
+.frow{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:9px}
+.frow .fi{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.frow .fi b{font-size:16px}.frow .fi em{font-style:normal;font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+.frow .fd{color:var(--muted);font-size:12.5px;margin-top:3px}
+.frow a.fbtn{display:inline-block;margin-top:9px;color:var(--accent);font-size:13px;font-weight:600;text-decoration:none}
+</style>
+</head>
+<body>
+
+<div id="login" class="login hide">
+  <h1 id="l_brand">COREXIA <span class="accent">·</span> Câmeras</h1>
+  <p>Versão leve. Entre com seu e-mail e senha do portal.</p>
+  <div class="fld"><label>E-mail</label><input id="l_email" type="email" autocomplete="username" placeholder="voce@email.com"></div>
+  <div class="fld"><label>Senha</label><input id="l_pw" type="password" autocomplete="current-password" placeholder="••••••••"></div>
+  <button id="l_btn" class="btn">Entrar</button>
+  <div id="l_msg" class="msg err" style="padding:14px 0 0"></div>
+</div>
+
+<div id="app" class="hide">
+  <div class="top">
+    <div class="brand" id="hdr_brand"><span>COREXIA</span></div>
+    <div class="sp"></div>
+    <button class="iconbtn" id="btn_reload">Atualizar</button>
+    <button class="iconbtn" id="btn_conta">⚙️</button>
+  </div>
+
+  <div class="wrap">
+    <section id="tab_cam">
+      <div id="count" class="count"></div>
+      <div id="grid" class="grid"></div>
+      <div id="cam_empty" class="msg hide"></div>
+    </section>
+
+    <section id="tab_mos" class="hide">
+      <div id="mos_list"></div>
+      <div id="mos_detail" class="hide"><button class="back" id="mos_back">‹ Mosaicos</button><div id="mos_grid" class="grid"></div></div>
+      <div id="mos_msg" class="msg"></div>
+    </section>
+
+    <section id="tab_alerts" class="hide">
+      <div id="a_list" class="alist"></div>
+      <div id="a_msg" class="msg"></div>
+    </section>
+
+    <section id="tab_rec" class="hide">
+      <div class="ctrl">
+        <select id="r_cam" class="sel"><option value="">Carregando câmeras…</option></select>
+        <div id="r_dias" class="chips"></div>
+      </div>
+      <div id="r_list"></div>
+      <div id="r_msg" class="msg"></div>
+    </section>
+
+    <section id="tab_more" class="hide">
+      <button class="bigbtn" id="btn_busca"><b>🔎 Pergunte ao Corexia</b><small>busca por IA nas suas gravações</small></button>
+      <button class="bigbtn" id="btn_suporte"><b>🎫 Suporte</b><small>abrir chamado / ver respostas</small></button>
+      <div class="sechd">Faturas</div>
+      <div id="f_list"></div>
+      <div id="f_msg" class="msg"></div>
+    </section>
+  </div>
+
+  <nav class="nav">
+    <button data-tab="cam" class="on"><span class="ic">📹</span>Câmeras</button>
+    <button data-tab="mos"><span class="ic">🔲</span>Mosaicos</button>
+    <button data-tab="alerts"><span class="ic">🔔</span>Alertas</button>
+    <button data-tab="rec"><span class="ic">⏺</span>Gravações</button>
+    <button data-tab="more"><span class="ic">☰</span>Mais</button>
+  </nav>
+</div>
+
+<div id="ov" class="ov hide">
+  <div class="ovhd"><span class="ovnm" id="ov_nm"></span><button class="ovx" id="ov_x">Fechar ✕</button></div>
+  <div class="ovbody" id="ov_body"></div>
+</div>
+
+<div id="conta" class="conta hide">
+  <div class="ch"><b style="flex:1;font-size:16px">Conta</b><button class="iconbtn" id="conta_x">Fechar ✕</button></div>
+  <div class="cb">
+    <div class="sechd">🔔 Preferências de alerta</div>
+    <label class="grow" style="cursor:pointer"><span>Receber alertas no WhatsApp</span><input type="checkbox" id="pf_wa" style="width:20px;height:20px;accent-color:var(--accent)"></label>
+    <div style="color:var(--muted);font-size:12px;margin:12px 2px 6px">Tipos (nenhum marcado = todos)</div>
+    <div id="pf_tipos" class="chips"></div>
+    <div style="display:flex;gap:10px;margin-top:12px">
+      <div class="fld" style="flex:1;margin:0"><label>Avisar a partir de</label><input id="pf_ini" type="time" class="sel"></div>
+      <div class="fld" style="flex:1;margin:0"><label>Até</label><input id="pf_fim" type="time" class="sel"></div>
+    </div>
+    <div style="color:var(--muted);font-size:12px;margin:12px 2px 6px">Dias (nenhum = todos)</div>
+    <div id="pf_dias" class="chips"></div>
+    <button class="btn" id="pf_btn" style="margin-top:14px">Salvar preferências</button>
+    <div id="pf_msg" class="msg" style="padding:10px 0 0"></div>
+
+    <div id="guarda_sec" class="hide">
+      <div class="sechd">🛡️ Guarda-Piscina</div>
+      <div style="color:var(--muted);font-size:12.5px;margin:0 2px 10px">Ative quando a piscina deve ficar VAZIA. Se alguém/algo entrar na água, você recebe alerta.</div>
+      <div id="guarda_list"></div>
+    </div>
+    <div class="sechd">Trocar senha</div>
+    <div class="fld"><label>Senha atual</label><input id="pw_a" type="password" autocomplete="current-password"></div>
+    <div class="fld"><label>Nova senha (mín. 6)</label><input id="pw_b" type="password" autocomplete="new-password"></div>
+    <div class="fld"><label>Confirmar nova senha</label><input id="pw_c" type="password" autocomplete="new-password"></div>
+    <button class="btn" id="pw_btn">Salvar nova senha</button>
+    <div id="pw_msg" class="msg" style="padding:12px 0 0"></div>
+    <div class="sechd">Versão</div>
+    <button class="btn ghost" id="btn_classico">← Voltar pra versão clássica</button>
+    <div class="sechd">Sessão</div>
+    <button class="btn ghost" id="conta_out">Sair da conta</button>
+  </div>
+</div>
+
+<div id="suporte" class="conta hide">
+  <div class="ch"><b style="flex:1;font-size:16px">Suporte</b><button class="iconbtn" id="sup_x">Fechar ✕</button></div>
+  <div class="cb">
+    <div class="sechd">Abrir chamado</div>
+    <div class="fld"><label>Assunto</label>
+      <select id="sup_tipo" class="sel"><option value="suporte">Suporte técnico</option><option value="financeiro">Financeiro</option><option value="geral">Outro</option></select></div>
+    <div class="fld"><label>Descreva a solicitação</label>
+      <textarea id="sup_desc" rows="4" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--ink);padding:12px;font-size:15px;width:100%;font-family:inherit;resize:vertical"></textarea></div>
+    <button class="btn" id="sup_btn">Abrir chamado</button>
+    <div id="sup_msg" class="msg" style="padding:10px 0 0"></div>
+    <div class="sechd">Meus chamados</div>
+    <div id="sup_list"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id);};
+  var TOKEN=null; try{ TOKEN=localStorage.getItem('corexia_token')||null; }catch(e){}
+  var CAMS=[], CAMMAP={}, REFRESH=null, TAB='cam', RECCAMS=[], MOS=[];
+  var TIPO={afogamento:'Afogamento',suspeito:'Comportamento suspeito',guarda_piscina:'Guarda-Piscina',facial_desconhecido:'Rosto desconhecido',acesso_facial:'Acesso reconhecido',intruso:'Intrusão',linha:'Linha cruzada',fogo:'Fogo/Fumaça',fogo_fumaca:'Fogo/Fumaça',arma:'Arma',arma_fogo:'Arma de fogo',arma_branca:'Arma branca',faca:'Arma branca',epi:'EPI',toca_ninja:'Rosto coberto',heatmap:'Movimento',pessoa:'Pessoa',veiculo:'Veículo',placa:'Placa (LPR)',aglomeracao:'Aglomeração'};
+
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function api(m,p,b){ return fetch(p,{method:m,headers:{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined})
+    .then(function(r){ if(r.status===401){ logout(); throw new Error('sessao'); } if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }); }
+  function view(id){ ['login','app'].forEach(function(x){ $(x).classList.toggle('hide', x!==id); }); }
+  function tq(){ return encodeURIComponent(TOKEN); }
+  function fmtDT(s){ if(!s) return ''; var m=/(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(String(s)); return m? (m[3]+'/'+m[2]+' '+m[4]+':'+m[5]) : String(s).slice(0,16); }
+  function thumbUrl(id){ return '/camthumb/'+encodeURIComponent(id)+'?t='+tq()+'&r='+Math.floor(Date.now()/1000); }
+
+  function applyBrand(){
+    fetch('/api/branding').then(function(r){return r.json();}).then(function(b){
+      if(!b) return; var nome=b.nome||'Corexia';
+      if(b.cor){ document.documentElement.style.setProperty('--accent', b.cor); }
+      document.title=nome;
+      var hb=$('hdr_brand');
+      if(b.logo){ hb.innerHTML='<img src="'+esc(b.logo)+'" alt="'+esc(nome)+'" onerror="this.replaceWith(document.createTextNode(\''+esc(nome)+'\'))">'; }
+      else { hb.innerHTML='<span>'+esc(nome).toUpperCase()+'</span>'; }
+      $('l_brand').innerHTML=esc(nome).toUpperCase()+' <span class="accent">·</span> Câmeras';
+    }).catch(function(){});
+  }
+
+  function doLogin(){
+    var email=($('l_email').value||'').trim(), pw=$('l_pw').value||'';
+    if(!email||!pw){ $('l_msg').textContent='Informe e-mail e senha.'; return; }
+    $('l_btn').disabled=true; $('l_msg').textContent='';
+    fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email,password:pw})})
+      .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,j:j}; }); })
+      .then(function(x){ $('l_btn').disabled=false;
+        if(!x.ok){ $('l_msg').textContent=(x.j&&x.j.error)||'Falha no login.'; return; }
+        TOKEN=x.j.token; try{ localStorage.setItem('corexia_token',TOKEN); }catch(e){}
+        start();
+      }).catch(function(){ $('l_btn').disabled=false; $('l_msg').textContent='Erro de conexão.'; });
+  }
+  function logout(){ closeOv(); $('conta').classList.add('hide'); try{ localStorage.removeItem('corexia_token'); }catch(e){} TOKEN=null; stopRefresh(); view('login'); }
+
+  function showTab(t){ TAB=t;
+    ['cam','mos','alerts','rec','more'].forEach(function(x){ $('tab_'+x).classList.toggle('hide', x!==t); });
+    Array.prototype.forEach.call(document.querySelectorAll('.nav button'),function(bt){ bt.classList.toggle('on', bt.getAttribute('data-tab')===t); });
+    if(t==='mos' && !MOS.length) loadMos();
+    if(t==='alerts') loadAlerts();
+    if(t==='rec' && !RECCAMS.length) loadRecCams();
+    if(t==='more') loadFaturas();
+  }
+
+  /* ---- cameras ---- */
+  function embedOf(c){ var e=(c.embed_url||'').trim(); if(e) return e; if(c.stream_key) return '/watch/'+encodeURIComponent(c.stream_key); return ''; }
+  function loadCams(){
+    return api('GET','/api/entities/Camera').then(function(list){
+      CAMS=(list||[]).filter(function(c){return c && (c.id||c._id);}).map(function(c){ return {id:c.id||c._id, nome:c.nome||'Câmera', embed:embedOf(c)}; });
+      CAMS.sort(function(a,b){return (a.nome||'').localeCompare(b.nome||'','pt');});
+      CAMMAP={}; CAMS.forEach(function(c){ CAMMAP[c.id]=c; });
+      renderGrid();
+    });
+  }
+  function tileHtml(c){
+    return '<div class="tile" data-embed="'+esc(c.embed||'')+'" data-nome="'+esc(c.nome)+'">'
+      +'<div class="thumb"><div class="ph">carregando…</div>'
+      +'<img loading="lazy" alt="" data-id="'+esc(c.id)+'" src="'+thumbUrl(c.id)+'" onload="this.previousElementSibling&&(this.previousElementSibling.style.display=\'none\')" onerror="this.style.display=\'none\';this.previousElementSibling&&(this.previousElementSibling.textContent=\'sem imagem\')">'
+      +'<div class="play">▶</div></div><div class="nm">'+esc(c.nome)+'</div></div>';
+  }
+  function wireTiles(host){ Array.prototype.forEach.call(host.querySelectorAll('.tile'),function(t){ t.addEventListener('click',function(){ openLive(t.getAttribute('data-embed'), t.getAttribute('data-nome')); }); }); }
+  function renderGrid(){
+    $('count').textContent = CAMS.length ? (CAMS.length+' câmera'+(CAMS.length>1?'s':'')) : '';
+    var g=$('grid');
+    if(!CAMS.length){ g.innerHTML=''; $('cam_empty').textContent='Nenhuma câmera atribuída à sua conta.'; $('cam_empty').classList.remove('hide'); return; }
+    $('cam_empty').classList.add('hide');
+    g.innerHTML=CAMS.map(tileHtml).join(''); wireTiles(g);
+  }
+  function refreshThumbs(){
+    if(document.hidden) return;
+    var host = TAB==='cam' ? $('grid') : (TAB==='mos' ? $('mos_grid') : null); if(!host) return;
+    Array.prototype.forEach.call(host.querySelectorAll('.tile img'),function(img){
+      var id=img.getAttribute('data-id'); if(!id) return;
+      var pre=new Image(); pre.onload=function(){ img.src=pre.src; img.style.display=''; }; pre.src=thumbUrl(id);
+    });
+  }
+  function startRefresh(){ stopRefresh(); REFRESH=setInterval(refreshThumbs, 7000); }
+  function stopRefresh(){ if(REFRESH){ clearInterval(REFRESH); REFRESH=null; } }
+
+  /* ---- mosaicos ---- */
+  function loadMos(){
+    $('mos_msg').textContent='carregando…'; $('mos_msg').classList.remove('hide'); $('mos_detail').classList.add('hide'); $('mos_list').classList.remove('hide');
+    api('GET','/api/entities/Mosaico').then(function(list){
+      MOS=(list||[]).filter(function(m){return m && (m.id||m._id) && m.ativo!==false;});
+      var L=$('mos_list');
+      if(!MOS.length){ L.innerHTML=''; $('mos_msg').textContent='Nenhum mosaico criado para você.'; return; }
+      $('mos_msg').classList.add('hide');
+      L.innerHTML=MOS.map(function(m){ var n=(m.cameras||[]).length; return '<div class="mrow" data-id="'+esc(m.id||m._id)+'"><b>'+esc(m.nome||'Mosaico')+'</b><span>'+n+' câmera'+(n!==1?'s':'')+' ›</span></div>'; }).join('');
+      Array.prototype.forEach.call(L.querySelectorAll('.mrow'),function(r){ r.addEventListener('click',function(){ openMos(r.getAttribute('data-id')); }); });
+    }).catch(function(e){ if((e&&e.message)!=='sessao') $('mos_msg').textContent='Erro ao carregar mosaicos.'; });
+  }
+  function openMos(id){
+    var m=MOS.filter(function(x){return (x.id||x._id)===id;})[0]; if(!m) return;
+    $('mos_list').classList.add('hide'); $('mos_msg').classList.add('hide'); $('mos_detail').classList.remove('hide');
+    var g=$('mos_grid');
+    var tiles=(m.cameras||[]).map(function(cid){ return CAMMAP[cid] || {id:cid,nome:'Câmera',embed:''}; });
+    g.innerHTML=tiles.map(tileHtml).join('') || '<div class="msg">Mosaico sem câmeras.</div>'; wireTiles(g);
+  }
+
+  /* ---- alertas ---- */
+  function loadAlerts(){
+    $('a_msg').textContent='carregando…'; $('a_msg').classList.remove('hide');
+    api('GET','/api/entities/Alerta?sort=-created_date&limit=60').then(function(list){
+      list=list||[]; var L=$('a_list');
+      if(!list.length){ L.innerHTML=''; $('a_msg').textContent='Nenhum alerta recente.'; return; }
+      $('a_msg').classList.add('hide');
+      L.innerHTML=list.map(function(a){
+        var tp=TIPO[a.tipo]||a.tipo||'Alerta';
+        var img=a.imagem_url? ('<img class="ath" src="'+esc(a.imagem_url)+'?t='+tq()+'" onerror="this.style.visibility=\'hidden\'">') : '<div class="ath"></div>';
+        var q=(a.verificado===false)?'<span class="badge q">em revisão</span>':'';
+        return '<div class="arow" data-img="'+esc(a.imagem_url||'')+'" data-nm="'+esc(tp+' · '+(a.camera_nome||''))+'">'
+          +img+'<div class="ai"><div class="at"><span class="badge">'+esc(tp)+'</span>'+q+'</div>'
+          +'<div class="acam">'+esc(a.camera_nome||'—')+'</div>'
+          +(a.descricao?'<div class="ad">'+esc(a.descricao)+'</div>':'')+'</div>'
+          +'<div class="ah">'+esc(fmtDT(a.created_date||a.criado))+'</div></div>';
+      }).join('');
+      Array.prototype.forEach.call(L.querySelectorAll('.arow'),function(r){ r.addEventListener('click',function(){ var u=r.getAttribute('data-img'); if(u) openImg(u+'?t='+tq(), r.getAttribute('data-nm')); }); });
+    }).catch(function(e){ if((e&&e.message)!=='sessao') $('a_msg').textContent='Erro ao carregar alertas.'; });
+  }
+
+  /* ---- gravacoes ---- */
+  function loadRecCams(){
+    $('r_msg').textContent='carregando…'; $('r_msg').classList.remove('hide');
+    api('GET','/api/gravacoes/cameras').then(function(list){
+      RECCAMS=list||[]; var s=$('r_cam');
+      if(!RECCAMS.length){ s.innerHTML='<option value="">—</option>'; $('r_msg').textContent='Nenhuma câmera com gravação em nuvem.'; $('r_dias').innerHTML=''; $('r_list').innerHTML=''; return; }
+      $('r_msg').classList.add('hide');
+      s.innerHTML='<option value="">Selecione a câmera…</option>'+RECCAMS.map(function(c){ return '<option value="'+esc(c.camera_id)+'">'+esc(c.camera_nome||c.camera_id)+'</option>'; }).join('');
+    }).catch(function(e){ if((e&&e.message)!=='sessao') $('r_msg').textContent='Erro ao carregar gravações.'; });
+  }
+  function onRecCam(){
+    var id=$('r_cam').value; $('r_list').innerHTML=''; var c=RECCAMS.filter(function(x){return x.camera_id===id;})[0]; var d=$('r_dias');
+    if(!c){ d.innerHTML=''; return; }
+    d.innerHTML=(c.dias||[]).map(function(x){ return '<span class="chip" data-d="'+esc(x)+'">'+esc(x.split('-').reverse().join('/'))+'</span>'; }).join('') || '<span class="msg">sem dias</span>';
+    Array.prototype.forEach.call(d.querySelectorAll('.chip'),function(ch){ ch.addEventListener('click',function(){ Array.prototype.forEach.call(d.querySelectorAll('.chip'),function(o){o.classList.remove('on');}); ch.classList.add('on'); loadTrechos(id,ch.getAttribute('data-d')); }); });
+  }
+  function loadTrechos(id,data){
+    $('r_list').innerHTML='<div class="msg">carregando trechos…</div>';
+    api('GET','/api/gravacoes?camera_id='+encodeURIComponent(id)+'&data='+encodeURIComponent(data)).then(function(list){
+      list=list||[]; if(!list.length){ $('r_list').innerHTML='<div class="msg">Sem gravações nesse dia.</div>'; return; }
+      $('r_list').innerHTML='<div style="display:flex;flex-direction:column;gap:8px">'+list.map(function(t){ return '<div class="rrow" data-url="'+esc(t.url||'')+'" data-nm="'+esc(t.inicio||'')+'"><b>'+esc(t.inicio||'')+'</b><span>'+esc(String(t.tamanho_mb||0))+' MB ›</span></div>'; }).join('')+'</div>';
+      Array.prototype.forEach.call($('r_list').querySelectorAll('.rrow'),function(r){ r.addEventListener('click',function(){ var u=r.getAttribute('data-url'); if(u) openRec(u, 'Gravação '+r.getAttribute('data-nm')); }); });
+    }).catch(function(e){ if((e&&e.message)!=='sessao') $('r_list').innerHTML='<div class="msg">Erro ao carregar trechos.</div>'; });
+  }
+
+  /* ---- overlay midia ---- */
+  function openOv(nome){ $('ov_nm').textContent=nome||''; $('ov').classList.remove('hide'); return $('ov_body'); }
+  function openLive(embed,nome){ var b=openOv(nome); b.innerHTML='<div class="ovload"><span class="spin"></span>conectando…</div>';
+    if(!embed){ b.innerHTML='<div class="ovload">Esta câmera não tem player.</div>'; return; }
+    var f=document.createElement('iframe'); f.setAttribute('allow','autoplay; fullscreen; encrypted-media'); f.setAttribute('allowfullscreen',''); f.setAttribute('playsinline',''); f.src=embed;
+    f.addEventListener('load',function(){ var l=b.querySelector('.ovload'); if(l)l.style.display='none'; }); b.appendChild(f);
+  }
+  function openImg(url,nome){ openOv(nome).innerHTML='<img src="'+esc(url)+'" alt="">'; }
+  function openRec(url,nome){ openOv(nome).innerHTML='<video src="'+esc(url)+'" controls autoplay playsinline></video>'; }
+  function closeOv(){ $('ov').classList.add('hide'); $('ov_body').innerHTML=''; }
+
+  /* ---- conta: trocar senha + guarda ---- */
+  function openConta(){ $('conta').classList.remove('hide'); $('pw_a').value=$('pw_b').value=$('pw_c').value=''; $('pw_msg').textContent=''; loadPref(); loadGuarda(); }
+  function closeConta(){ $('conta').classList.add('hide'); }
+  function changePw(){
+    var a=$('pw_a').value, bb=$('pw_b').value, cc=$('pw_c').value;
+    if(bb.length<6){ $('pw_msg').className='msg err'; $('pw_msg').textContent='A nova senha precisa de ao menos 6 caracteres.'; return; }
+    if(bb!==cc){ $('pw_msg').className='msg err'; $('pw_msg').textContent='A confirmação não confere.'; return; }
+    $('pw_btn').disabled=true; $('pw_msg').className='msg'; $('pw_msg').textContent='Salvando…';
+    api('POST','/api/auth/change-password',{senha_atual:a,nova_senha:bb}).then(function(){
+      $('pw_btn').disabled=false; $('pw_msg').className='msg'; $('pw_msg').style.color='var(--ok)'; $('pw_msg').textContent='Senha alterada com sucesso.'; $('pw_a').value=$('pw_b').value=$('pw_c').value='';
+    }).catch(function(e){ $('pw_btn').disabled=false; $('pw_msg').className='msg err'; $('pw_msg').style.color=''; $('pw_msg').textContent=(e&&e.message&&e.message.indexOf('403')>=0)?'Senha atual incorreta.':'Erro ao alterar a senha.'; });
+  }
+  function loadGuarda(){
+    api('GET','/api/portal/guarda').then(function(list){
+      list=list||[]; if(!list.length){ $('guarda_sec').classList.add('hide'); return; }
+      $('guarda_sec').classList.remove('hide');
+      $('guarda_list').innerHTML=list.map(function(c){ return '<div class="grow"><span>'+esc(c.nome||'Câmera')+'</span><button class="tgl '+(c.armado?'on':'off')+'" data-cam="'+esc(c.camera_id)+'" data-arm="'+(c.armado?'0':'1')+'">'+(c.armado?'ARMADO':'DESARMADO')+'</button></div>'; }).join('');
+      Array.prototype.forEach.call($('guarda_list').querySelectorAll('button[data-cam]'),function(bt){ bt.addEventListener('click',function(){
+        bt.disabled=true; api('POST','/api/portal/guarda',{camera_id:bt.getAttribute('data-cam'),armado:bt.getAttribute('data-arm')==='1'}).then(function(){ loadGuarda(); }).catch(function(){ bt.disabled=false; });
+      }); });
+    }).catch(function(){ $('guarda_sec').classList.add('hide'); });
+  }
+
+  /* ---- faturas + busca ---- */
+  function fatStatus(s){ s=(s||'').toLowerCase();
+    if(/pag|receb|confirm/.test(s)) return {t:'pago',c:'var(--ok)'};
+    if(/venc|overdue|atras|expir/.test(s)) return {t:'vencido',c:'var(--bad)'};
+    return {t:'pendente',c:'var(--accent)'};
+  }
+  function loadFaturas(){
+    $('f_msg').textContent='carregando…'; $('f_msg').classList.remove('hide');
+    api('GET','/api/entities/Fatura?sort=-vencimento&limit=24').then(function(list){
+      list=list||[]; var L=$('f_list');
+      if(!list.length){ L.innerHTML=''; $('f_msg').textContent='Nenhuma fatura no momento.'; return; }
+      $('f_msg').classList.add('hide');
+      L.innerHTML=list.map(function(f){
+        var st=fatStatus(f.status);
+        var val=(typeof f.valor==='number')?('R$ '+f.valor.toFixed(2).replace('.',',')):esc(f.valor||'—');
+        var venc=String(f.vencimento||'').slice(0,10).split('-').reverse().join('/');
+        var link=f.invoice_url||f.link_boleto||'';
+        return '<div class="frow"><div class="fi"><b>'+val+'</b><em style="color:'+st.c+'">'+st.t+'</em></div>'
+          +'<div class="fd">'+(f.reference_month?('Ref. '+esc(f.reference_month)+' · '):'')+'Venc. '+esc(venc)+'</div>'
+          +(link?'<a class="fbtn" href="'+esc(link)+'" target="_blank" rel="noopener">Ver fatura / pagar ›</a>':'')+'</div>';
+      }).join('');
+    }).catch(function(e){ if((e&&e.message)!=='sessao') $('f_msg').textContent='Erro ao carregar faturas.'; });
+  }
+  function openBusca(){ var b=openOv('Pergunte ao Corexia'); b.innerHTML='';
+    var f=document.createElement('iframe'); f.setAttribute('allow','fullscreen'); f.src='/portal/busca?t='+tq();
+    f.style.cssText='position:absolute;inset:0;width:100%;height:100%;border:0;background:#0b0d12'; b.appendChild(f);
+  }
+
+  /* ---- preferências de alerta (auto-escopado no próprio cliente) ---- */
+  var PF_TIPOS=[['afogamento','Afogamento'],['suspeito','Suspeito'],['guarda_piscina','Guarda-Piscina'],['fogo','Fogo/Fumaça'],['intruso','Intrusão'],['facial_desconhecido','Rosto desconhecido'],['arma_fogo','Arma de fogo'],['arma_branca','Arma branca'],['placa','Placa'],['epi','EPI']];
+  var PF_DIAS=[['1','Seg'],['2','Ter'],['3','Qua'],['4','Qui'],['5','Sex'],['6','Sáb'],['7','Dom']];
+  function pfChips(host,items,sel){ sel=(sel||[]).map(String);
+    host.innerHTML=items.map(function(it){ return '<span class="chip'+(sel.indexOf(String(it[0]))>=0?' on':'')+'" data-v="'+esc(it[0])+'">'+esc(it[1])+'</span>'; }).join('');
+    Array.prototype.forEach.call(host.querySelectorAll('.chip'),function(ch){ ch.addEventListener('click',function(){ ch.classList.toggle('on'); }); });
+  }
+  function pfSel(host){ return Array.prototype.slice.call(host.querySelectorAll('.chip.on')).map(function(ch){ return ch.getAttribute('data-v'); }); }
+  function loadPref(){
+    api('GET','/api/portal/preferencias').then(function(r){ var p=(r&&r.pref)||{};
+      $('pf_wa').checked = (p.notificar_whatsapp!==false);
+      $('pf_ini').value = p.hora_inicio||p.horario_inicio||''; $('pf_fim').value = p.hora_fim||p.horario_fim||'';
+      pfChips($('pf_tipos'),PF_TIPOS,p.tipos_permitidos||[]);
+      pfChips($('pf_dias'),PF_DIAS,p.dias_semana||[]);
+    }).catch(function(){ pfChips($('pf_tipos'),PF_TIPOS,[]); pfChips($('pf_dias'),PF_DIAS,[]); });
+  }
+  function savePref(){
+    $('pf_btn').disabled=true; $('pf_msg').className='msg'; $('pf_msg').style.color=''; $('pf_msg').textContent='Salvando…';
+    var body={ notificar_whatsapp:$('pf_wa').checked, ativo:true,
+      tipos_permitidos:pfSel($('pf_tipos')),
+      hora_inicio:$('pf_ini').value||'', hora_fim:$('pf_fim').value||'',
+      dias_semana:pfSel($('pf_dias')).map(function(x){return parseInt(x,10);}) };
+    api('POST','/api/portal/preferencias',body).then(function(){ $('pf_btn').disabled=false; $('pf_msg').style.color='var(--ok)'; $('pf_msg').textContent='Preferências salvas.'; }).catch(function(){ $('pf_btn').disabled=false; $('pf_msg').className='msg err'; $('pf_msg').style.color=''; $('pf_msg').textContent='Erro ao salvar.'; });
+  }
+
+  /* ---- suporte / chamados ---- */
+  function openSuporte(){ $('suporte').classList.remove('hide'); $('sup_desc').value=''; $('sup_msg').textContent=''; $('sup_msg').className='msg'; loadChamados(); }
+  function closeSuporte(){ $('suporte').classList.add('hide'); }
+  function chStatus(s){ s=(s||'').toLowerCase(); if(/fech|resolv|conclu/.test(s)) return {t:'fechado',c:'var(--muted)'}; if(/respond/.test(s)) return {t:'respondido',c:'var(--ok)'}; return {t:'aberto',c:'var(--accent)'}; }
+  function abrirChamado(){
+    var t=$('sup_tipo').value, d=($('sup_desc').value||'').trim();
+    if(d.length<3){ $('sup_msg').className='msg err'; $('sup_msg').textContent='Descreva a solicitação.'; return; }
+    $('sup_btn').disabled=true; $('sup_msg').className='msg'; $('sup_msg').style.color=''; $('sup_msg').textContent='Enviando…';
+    api('POST','/api/chamados',{tipo:t,descricao:d}).then(function(){
+      $('sup_btn').disabled=false; $('sup_msg').className='msg'; $('sup_msg').style.color='var(--ok)'; $('sup_msg').textContent='Chamado aberto! O provedor foi notificado.'; $('sup_desc').value=''; loadChamados();
+    }).catch(function(e){ $('sup_btn').disabled=false; $('sup_msg').className='msg err'; $('sup_msg').style.color=''; $('sup_msg').textContent=(e&&e.message&&e.message.indexOf('400')>=0)?'Descreva melhor a solicitação.':'Erro ao abrir o chamado.'; });
+  }
+  function loadChamados(){
+    $('sup_list').innerHTML='<div class="msg">carregando…</div>';
+    api('GET','/api/chamados').then(function(list){
+      list=list||[]; if(!list.length){ $('sup_list').innerHTML='<div class="msg">Nenhum chamado ainda.</div>'; return; }
+      $('sup_list').innerHTML=list.map(function(c){ var st=chStatus(c.status);
+        return '<div class="frow"><div class="fi"><b style="font-size:14px">'+esc(c.tipo||'chamado')+'</b><em style="color:'+st.c+'">'+st.t+'</em></div>'
+          +'<div class="fd" style="white-space:normal;margin-top:5px;color:var(--ink)">'+esc(c.descricao||'')+'</div>'
+          +'<div class="fd" style="margin-top:3px">'+esc(fmtDT(c.created_date||c.criado))+'</div>'
+          +(c.resposta?'<div style="margin-top:8px;padding:9px 11px;background:var(--surface2);border-radius:9px;font-size:13px;line-height:1.5"><b style="color:var(--accent)">Resposta:</b> '+esc(c.resposta)+'</div>':'')
+          +'</div>';
+      }).join('');
+    }).catch(function(){ $('sup_list').innerHTML='<div class="msg">Erro ao carregar chamados.</div>'; });
+  }
+
+  function start(){ view('app'); showTab('cam'); startRefresh(); loadCams().catch(function(e){ if((e&&e.message)!=='sessao'){ $('cam_empty').textContent='Erro ao carregar câmeras.'; $('cam_empty').classList.remove('hide'); } }); }
+
+  applyBrand();
+  $('l_btn').addEventListener('click',doLogin);
+  $('l_pw').addEventListener('keydown',function(e){ if(e.key==='Enter') doLogin(); });
+  $('btn_reload').addEventListener('click',function(){ if(TAB==='cam'){loadCams();} else if(TAB==='mos')loadMos(); else if(TAB==='alerts')loadAlerts(); else loadRecCams(); });
+  $('btn_conta').addEventListener('click',openConta);
+  $('conta_x').addEventListener('click',closeConta);
+  $('conta_out').addEventListener('click',logout);
+  $('btn_classico').addEventListener('click',function(){ try{ localStorage.setItem('cx_classico','1'); }catch(e){} location.href='/portal'; });
+  $('pw_btn').addEventListener('click',changePw);
+  $('pf_btn').addEventListener('click',savePref);
+  $('ov_x').addEventListener('click',closeOv);
+  $('mos_back').addEventListener('click',function(){ $('mos_detail').classList.add('hide'); $('mos_list').classList.remove('hide'); });
+  $('r_cam').addEventListener('change',onRecCam);
+  $('btn_busca').addEventListener('click',openBusca);
+  $('btn_suporte').addEventListener('click',openSuporte);
+  $('sup_x').addEventListener('click',closeSuporte);
+  $('sup_btn').addEventListener('click',abrirChamado);
+  Array.prototype.forEach.call(document.querySelectorAll('.nav button'),function(bt){ bt.addEventListener('click',function(){ showTab(bt.getAttribute('data-tab')); }); });
+  document.addEventListener('visibilitychange',function(){ if(!document.hidden) refreshThumbs(); });
+
+  if(TOKEN){ api('GET','/api/auth/me').then(function(){ start(); }).catch(function(){ view('login'); }); }
+  else { view('login'); }
+})();
+</script>
+</body>
+</html>

@@ -3619,6 +3619,46 @@ async def cliente_cameras(req: Request):
     return out
 
 
+@app.get("/api/portal/preferencias")
+async def portal_pref_get(req: Request):
+    u = current_user(req)
+    if not u:
+        return _unauth()
+    cid = u.get("cliente_id") or ""
+    if not cid:
+        return _forbidden()
+    c = db()
+    row = c.execute("SELECT data FROM entities WHERE entity='PreferenciaAlerta' AND json_extract(data,'$.cliente_id')=? LIMIT 1", (cid,)).fetchone()
+    c.close()
+    return {"pref": (json.loads(row["data"]) if row else None)}
+
+
+@app.post("/api/portal/preferencias")
+async def portal_pref_save(req: Request):
+    u = current_user(req)
+    if not u:
+        return _unauth()
+    cid = u.get("cliente_id") or ""
+    if not cid:
+        return _forbidden()
+    b = await req.json()
+    cli = _get_entity("Cliente", cid) or {}
+    data = {"provedor_id": cli.get("provedor_id", ""), "cliente_id": cid, "cliente_nome": cli.get("nome", ""),
+            "tipos_permitidos": b.get("tipos_permitidos") or [],
+            "hora_inicio": (b.get("hora_inicio") or "").strip(), "hora_fim": (b.get("hora_fim") or "").strip(),
+            "dias_semana": [int(d) for d in (b.get("dias_semana") or []) if str(d).isdigit() or isinstance(d, int)],
+            "notificar_whatsapp": bool(b.get("notificar_whatsapp", True)), "ativo": bool(b.get("ativo", True))}
+    c = db()
+    row = c.execute("SELECT id FROM entities WHERE entity='PreferenciaAlerta' AND json_extract(data,'$.cliente_id')=?", (cid,)).fetchone()
+    now = _now_iso()
+    if row:
+        c.execute("UPDATE entities SET data=?, updated_date=? WHERE entity='PreferenciaAlerta' AND id=?", (json.dumps(data, ensure_ascii=False), now, row["id"]))
+    else:
+        c.execute("INSERT INTO entities (entity,id,data,created_date,updated_date) VALUES (?,?,?,?,?)", ("PreferenciaAlerta", secrets.token_hex(12), json.dumps(data, ensure_ascii=False), now, now))
+    c.commit(); c.close()
+    return {"success": True}
+
+
 @app.get("/api/portal/guarda")
 async def portal_guarda_list(req: Request):
     u = current_user(req)
@@ -3830,6 +3870,29 @@ if os.path.isdir(os.path.join(WEB, "assets")):
     app.mount("/assets", StaticFiles(directory=os.path.join(WEB, "assets")), name="assets")
 if os.path.isdir(os.path.join(WEB, "brand")):
     app.mount("/brand", StaticFiles(directory=os.path.join(WEB, "brand")), name="brand")
+
+@app.get("/novo")
+def portal_novo():
+    p = os.path.join(WEB, "lite.html")
+    if os.path.exists(p):
+        return FileResponse(p, media_type="text/html", headers={"Cache-Control": "no-cache"})
+    return JSONResponse({"error": "indisponivel"}, status_code=404)
+
+
+@app.get("/api/branding")
+def api_branding(req: Request):
+    """Marca (nome/logo/cor) do provedor pelo Host — publico, so leitura. Usado pelo portal leve."""
+    b = None
+    try:
+        b = _wl_brand(req.headers.get("host", ""))
+    except Exception:
+        b = None
+    if not b:
+        return {"nome": "Corexia", "logo": "", "cor": "#f97316"}
+    return {"nome": (b.get("nome") or b.get("nome_marca") or "Corexia"),
+            "logo": (b.get("logo") or ""),
+            "cor": (b.get("cor") or b.get("cor_menu") or "#f97316")}
+
 
 @app.get("/manifest.json")
 def manifest(request: Request):
@@ -4209,6 +4272,43 @@ _PORTAL_VIEWPORT_CSS = r"""<style>/* corexia-viewport */
 </style>"""
 
 
+_PORTAL_BETA_JS = r"""<script>/* corexia-beta */
+(function(){
+  if(window.__cxBeta) return; window.__cxBeta=true;
+  var TOKEN=null; try{ TOKEN=localStorage.getItem('corexia_token'); }catch(e){}
+  if(!TOKEN) return;
+  function classico(){ try{ return localStorage.getItem('cx_classico')==='1'; }catch(e){ return false; } }
+  function onPortal(){ return location.pathname.indexOf('/portal')===0; }
+  function banner(){
+    if(document.getElementById('cx-volta')) return;
+    if(!document.body){ setTimeout(banner,500); return; }
+    var w=document.createElement('div'); w.id='cx-volta';
+    w.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:2147482000;display:flex;justify-content:center;padding:10px 12px;padding-bottom:calc(env(safe-area-inset-bottom) + 10px);pointer-events:none;font-family:system-ui,-apple-system,sans-serif';
+    var c=document.createElement('div');
+    c.style.cssText='pointer-events:auto;width:100%;max-width:460px;display:flex;align-items:center;gap:10px;background:#12151b;color:#f2f4f6;border:1px solid #2a3340;border-radius:14px;box-shadow:0 14px 40px rgba(0,0,0,.5);padding:11px 12px';
+    c.innerHTML='<div style="flex:1;min-width:0;font-size:13px">Voc&#234; est&#225; na <b>vers&#227;o cl&#225;ssica</b>.</div>';
+    var b=document.createElement('button'); b.textContent='Ir para a nova';
+    b.style.cssText='flex:none;background:#f97316;color:#160d03;border:none;border-radius:10px;padding:9px 14px;font-weight:700;font-size:13px;cursor:pointer';
+    b.onclick=function(){ try{ localStorage.removeItem('cx_classico'); }catch(e){} location.href='/novo'; };
+    var x=document.createElement('button'); x.textContent='×'; x.setAttribute('aria-label','Fechar');
+    x.style.cssText='flex:none;background:none;border:none;color:#8b96a6;font-size:22px;line-height:1;cursor:pointer;padding:0 4px';
+    x.onclick=function(){ w.parentNode&&w.parentNode.removeChild(w); };
+    c.appendChild(b); c.appendChild(x); w.appendChild(c); document.body.appendChild(w);
+  }
+  function check(){
+    if(!onPortal()) return;
+    if(classico()){ banner(); return; }     // escolheu clássico: fica, com atalho pra nova
+    location.replace('/novo');               // padrão: portal novo
+  }
+  check();
+  var _ps=history.pushState, _rs=history.replaceState;
+  history.pushState=function(){ var r=_ps.apply(this,arguments); setTimeout(check,30); return r; };
+  history.replaceState=function(){ var r=_rs.apply(this,arguments); setTimeout(check,30); return r; };
+  window.addEventListener('popstate',function(){ setTimeout(check,30); });
+})();
+</script>"""
+
+
 _PORTAL_GUARDA_JS = r"""<script>/* corexia-guarda */
 (function(){
   if(window.__cxGuarda) return; window.__cxGuarda=true;
@@ -4309,6 +4409,8 @@ def spa(full_path: str, request: Request):
                 _inj += _PORTAL_VIDEO_JS
             if "corexia-viewport" not in _html:
                 _inj += _PORTAL_VIEWPORT_CSS
+            if "corexia-beta" not in _html:
+                _inj += _PORTAL_BETA_JS
             if "corexia-guarda" not in _html:
                 _inj += _PORTAL_GUARDA_JS
             # (busca FAB e meu-mosaico agora sao itens de menu via _PORTAL_MENU_JS)

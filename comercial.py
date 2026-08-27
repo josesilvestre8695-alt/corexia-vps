@@ -5467,9 +5467,27 @@ _PROV_CAMERAS_BODY = """
 .mprice{color:var(--muted);font-size:12px;font-family:var(--mono);white-space:nowrap}
 .subbox{margin:0 0 8px 22px;padding:8px 10px;background:var(--surface2);border-radius:8px}
 .subnote{font-size:12px;color:var(--muted);margin-bottom:6px}
-.subgrid{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px}</style>
+.subgrid{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px}
+.modrow{align-items:flex-start}
+.mck{align-items:flex-start!important}
+.mtxt{display:flex;flex-direction:column;gap:2px}
+.mnome{font-weight:600}
+.mdesc{font-weight:400;font-size:11.5px;color:var(--muted);line-height:1.35}
+.mprice{padding-top:1px}</style>
 <script>
 var DATA={cameras:[],modulos:[],grav_tiers:[],gravacao:'',plano_nome:''}; var CAMS=[]; window.PAGE_INIT=reload;
+var MOD_DESC={
+ corexia:'Pacote base: arma de fogo, arma branca, rosto coberto (toca ninja), animal, pessoa, zona de intrusão e linha virtual — marque os tópicos abaixo.',
+ fogo:'Detecta princípio de incêndio (fogo e fumaça) e alerta na hora.',
+ veiculos:'Identifica veículos e o tipo/modelo que aparecem na cena.',
+ epi:'Fiscaliza EPI: aponta quem está sem capacete, luva, óculos, máscara ou calçado.',
+ placa:'Leitura de placa (LPR). Só dispara em câmera marcada como “de entrada” pela Corexia.',
+ heatmap:'Mapa de calor: mostra onde as pessoas mais circulam e param na cena. Precisa desenhar a área.',
+ piscina:'Auxílio anti-afogamento: detecta pessoa imóvel ou submersa na água e avisa. Precisa desenhar a água.',
+ facial:'Controle de acesso por rosto: reconhece cadastrados e alerta rostos desconhecidos na portaria.',
+ guarda_piscina:'Piscina que deve ficar vazia: o cliente arma e, se alguém ou animal entrar na água, dispara alerta. Precisa desenhar a água.',
+ suspeito:'Comportamento suspeito: alguém rondando/ficando parado tempo demais no local, e possível ocultação/furto, confirmado por IA de visão.'
+};
 function iaMap(){ var m={}; DATA.modulos.forEach(function(mod){mod.analiticos.forEach(function(a){m[a[0]]=mod.key;});}); return m; }
 function ativosDe(cfg){ var s={}; if(!cfg)return s; (cfg.analiticos_padrao||[]).forEach(function(a){s[a]=1}); (cfg.horarios||[]).forEach(function(h){(h.analiticos||[]).forEach(function(a){s[a]=1})}); return s; }
 function modsAtivos(cfg){ var s=ativosDe(cfg); var mp=iaMap(); var o={}; Object.keys(s).forEach(function(a){ if(mp[a])o[mp[a]]=1; }); return Object.keys(o); }
@@ -5533,7 +5551,7 @@ async function facialDel(id){ if(!confirm('Excluir este rosto? (LGPD - remove o 
  try{ await api('POST','/api/comercial/prov/facial/excluir',{enroll_id:id}); facialLista(); }catch(e){ alert('Erro: '+(e&&e.message?e.message:e)); } }
 async function facialCancela(id){ try{ await api('POST','/api/comercial/prov/facial/cancelar',{req_id:id}); facialLista(); }catch(e){} }
 function buildMods(){ var h=''; DATA.modulos.forEach(function(mod){
-  h+='<div class="modrow"><label class="ck" style="font-weight:600"><input type="checkbox" id="m_'+mod.key+'" onchange="onMod(\\''+mod.key+'\\')"> '+esc(mod.nome)+'</label><span class="mprice">'+brl(mod.valor)+'/mes</span></div>';
+  var _md=MOD_DESC[mod.key]||''; h+='<div class="modrow"><label class="ck mck" style="font-weight:600"><input type="checkbox" id="m_'+mod.key+'" onchange="onMod(\\''+mod.key+'\\')"> <span class="mtxt"><span class="mnome">'+esc(mod.nome)+'</span>'+(_md?'<span class="mdesc">'+esc(_md)+'</span>':'')+'</span></label><span class="mprice">'+brl(mod.valor)+'/mes</span></div>';
   if(mod.pacote){ h+='<div id="sub_'+mod.key+'" class="subbox" style="display:none"><div class="subnote" id="note_'+mod.key+'">Recomendado no maximo 3 topicos por camera (ex.: arma de fogo / faca / toca ninja).</div><div class="subgrid">';
    mod.analiticos.forEach(function(a){ h+='<label class="ck"><input type="checkbox" id="d_'+a[0]+'" onchange="onSub(\\''+mod.key+'\\')"> '+esc(a[1])+'</label>'; });
    h+='</div></div>'; } });
