@@ -982,6 +982,10 @@ _susp_dbg = {}      # cid -> ts do ultimo debug
 
 
 SUSP_GEMINI_ON = os.getenv("SUSP_GEMINI_ON", "1") not in ("0", "false", "False", "")
+SUSP_RONDA_SEC    = float(os.getenv("SUSP_RONDA_SEC", "25").replace(",", "."))     # presenca minima p/ avaliar ronda
+SUSP_RONDA_PATH   = float(os.getenv("SUSP_RONDA_PATH", "1.2").replace(",", "."))   # trajeto acumulado (fracao do frame) = andou muito
+SUSP_RONDA_SPREAD = float(os.getenv("SUSP_RONDA_SPREAD", "0.55").replace(",", ".")) # diagonal max da area visitada = confinamento
+SUSP_RONDA_RATIO  = float(os.getenv("SUSP_RONDA_RATIO", "2.5").replace(",", "."))  # trajeto/espalhamento alto = vai-e-volta (nao atravessa)
 
 
 def gemini_suspeito(crop_jpg, nome, dwell_secs=0):
@@ -1021,9 +1025,12 @@ def gemini_suspeito(crop_jpg, nome, dwell_secs=0):
         return None, ""
 
 
-def _susp_alerta(cam, area, frame_bgr, W, H, tk, dwell, now):
+def _susp_alerta(cam, area, frame_bgr, W, H, tk, dwell, now, modo="parado"):
     import numpy as _np
     px, py = int(tk["cx"] * W), int(tk["cy"] * H)
+    _rond = (modo == "rondando")
+    _lbl = ("RONDANDO ~%ds" % int(dwell)) if _rond else ("PERMANENCIA ~%ds" % int(dwell))
+    _txt = ("pessoa RONDANDO a area ha ~%ds (indo e voltando, sem sair do local)" % int(dwell)) if _rond else ("pessoa parada/permanencia ha ~%ds na area vigiada" % int(dwell))
     # --- Fase 2: confirma o COMPORTAMENTO com Gemini (anti-vies; so acao) ---
     verif, extra = True, ""
     if SUSP_GEMINI_ON:
@@ -1051,7 +1058,7 @@ def _susp_alerta(cam, area, frame_bgr, W, H, tk, dwell, now):
         if area:
             cv2.polylines(an, [_np.array([(int(qx * W), int(qy * H)) for qx, qy in area], dtype=_np.int32)], True, (0, 165, 255), 2)
         cv2.circle(an, (px, py), 30, (0, 0, 255), 4)
-        cv2.putText(an, "PERMANENCIA ~%ds" % int(dwell), (max(0, px - 96), max(26, py - 42)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        cv2.putText(an, _lbl, (max(0, px - 96), max(26, py - 42)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
         crop = tk.get("crop")
         if crop is not None and getattr(crop, "size", 0) > 0:
             ih = 130; iw = max(46, min(int(crop.shape[1] * ih / max(1, crop.shape[0])), 190))
@@ -1064,8 +1071,8 @@ def _susp_alerta(cam, area, frame_bgr, W, H, tk, dwell, now):
             img_b64 = base64.b64encode(buf.tobytes()).decode()
     except Exception as _e:
         print("[suspeito] desenho:", _e)
-    desc = "COMPORTAMENTO SUSPEITO: pessoa em permanencia/merodeio ha ~%ds na area vigiada (assistivo - revisar)%s" % (int(dwell), extra)
-    print("[suspeito] %s: merodeio (track %s) ~%ds verif=%s" % (cam.get("nome", ""), tk.get("id"), int(dwell), verif))
+    desc = "COMPORTAMENTO SUSPEITO: %s (assistivo - revisar)%s" % (_txt, extra)
+    print("[suspeito] %s: %s (track %s) ~%ds verif=%s" % (cam.get("nome", ""), modo, tk.get("id"), int(dwell), verif))
     envia_alerta(cam, "suspeito", 0.85, desc, img_b64, verificado=verif)
 
 
@@ -1164,18 +1171,29 @@ def _susp_check(cam, predictions, frame_bgr, now):
         crop = _crop_person(frame_bgr, p, W, H)
         if best >= 0:
             tk = tracks[best]; used[best] = True
+            tk["path"] = tk.get("path", 0.0) + ((fx - tk["cx"]) ** 2 + (fy - tk["cy"]) ** 2) ** 0.5
             tk["cx"] = fx; tk["cy"] = fy; tk["last"] = now; tk["hits"] += 1
+            tk["minx"] = min(tk.get("minx", fx), fx); tk["maxx"] = max(tk.get("maxx", fx), fx)
+            tk["miny"] = min(tk.get("miny", fy), fy); tk["maxy"] = max(tk.get("maxy", fy), fy)
             if crop is not None:
                 tk["crop"] = crop
             dwell = now - tk["first"]
+            _spread = ((tk["maxx"] - tk["minx"]) ** 2 + (tk["maxy"] - tk["miny"]) ** 2) ** 0.5
             if (susp_on and not tk["alerted"] and tk["hits"] >= SUSP_MIN_HITS and dwell >= SUSP_DWELL_SEC
                     and (now - _susp_ultimo.get(cid, 0) >= SUSP_COOLDOWN)):
                 tk["alerted"] = True; _susp_ultimo[cid] = now
-                _susp_alerta(cam, area, frame_bgr, W, H, tk, dwell, now)
+                _susp_alerta(cam, area, frame_bgr, W, H, tk, dwell, now, "parado")
+            elif (susp_on and not tk.get("ronda_alerted") and tk["hits"] >= SUSP_MIN_HITS and dwell >= SUSP_RONDA_SEC
+                    and tk["path"] >= SUSP_RONDA_PATH and _spread <= SUSP_RONDA_SPREAD
+                    and tk["path"] >= SUSP_RONDA_RATIO * max(_spread, 0.05)
+                    and (now - _susp_ultimo.get(cid, 0) >= SUSP_COOLDOWN)):
+                tk["ronda_alerted"] = True; _susp_ultimo[cid] = now
+                _susp_alerta(cam, area, frame_bgr, W, H, tk, dwell, now, "rondando")
         else:
             _susp_tid[cid] = _susp_tid.get(cid, 0) + 1
             novos.append({"id": _susp_tid[cid], "cx": fx, "cy": fy, "first": now, "last": now,
-                          "hits": 1, "alerted": False, "crop": crop})
+                          "hits": 1, "alerted": False, "ronda_alerted": False, "crop": crop,
+                          "path": 0.0, "minx": fx, "maxx": fx, "miny": fy, "maxy": fy})
     keep = [tk for i, tk in enumerate(tracks) if used[i] or (now - tk["last"] <= SUSP_GAP_SEC)]
     _susp_tracks[cid] = keep + novos
     # --- Fase 3: ocultacao / furto (varejo) - Gemini no recorte da pessoa, custo limitado por camera ---
@@ -1201,7 +1219,7 @@ def _susp_check(cam, predictions, frame_bgr, now):
                 print("[furto] erro:", _e)
     if PISCINA_DEBUG and now - _susp_dbg.get(cid, 0) >= 2:
         _susp_dbg[cid] = now
-        _td = " ".join("t%s(h=%d dwell=%.0f)" % (x["id"], x["hits"], now - x["first"]) for x in _susp_tracks[cid][:6])
+        _td = " ".join("t%s(h=%d dwell=%.0f path=%.2f spr=%.2f)" % (x["id"], x["hits"], now - x["first"], x.get("path", 0), (((x.get("maxx", 0) - x.get("minx", 0)) ** 2 + (x.get("maxy", 0) - x.get("miny", 0)) ** 2) ** 0.5)) for x in _susp_tracks[cid][:6])
         print("[suspeito-dbg] %s | area=%s | pessoas=%d | tracks=%d %s" % (cam.get("nome", ""), "zona" if area else "frame", len(persons), len(_susp_tracks[cid]), _td))
 
 

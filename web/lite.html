@@ -28,6 +28,10 @@ button{font-family:inherit;cursor:pointer}
 .tile .thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
 .tile .thumb .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px}
 .tile .thumb .play{position:absolute;right:8px;bottom:8px;width:30px;height:30px;border-radius:50%;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff}
+.tile .thumb .stat{position:absolute;top:7px;left:7px;z-index:2;display:flex;align-items:center;gap:5px;font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px;background:rgba(6,8,12,.72);border:1px solid var(--border);color:var(--muted);backdrop-filter:blur(4px)}
+.tile .thumb .stat::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.tile .thumb .stat.on{color:#34d399;border-color:rgba(52,211,153,.5)}
+.tile .thumb .stat.off{color:#f87171;border-color:rgba(248,113,113,.5)}
 .tile .nm{padding:8px 11px;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .msg{color:var(--muted);font-size:14px;padding:30px 4px;text-align:center}
 .msg.err{color:var(--bad)}
@@ -268,12 +272,13 @@ button{font-family:inherit;cursor:pointer}
       CAMS=(list||[]).filter(function(c){return c && (c.id||c._id);}).map(function(c){ return {id:c.id||c._id, nome:c.nome||'Câmera', embed:embedOf(c)}; });
       CAMS.sort(function(a,b){return (a.nome||'').localeCompare(b.nome||'','pt');});
       CAMMAP={}; CAMS.forEach(function(c){ CAMMAP[c.id]=c; });
-      renderGrid();
+      renderGrid(); loadStatus();
     });
   }
   function tileHtml(c){
     return '<div class="tile" data-embed="'+esc(c.embed||'')+'" data-nome="'+esc(c.nome)+'">'
       +'<div class="thumb"><div class="ph">carregando…</div>'
+      +'<span class="stat" data-st="'+esc(c.id)+'">—</span>'
       +'<img loading="lazy" alt="" data-id="'+esc(c.id)+'" src="'+thumbUrl(c.id)+'" onload="this.previousElementSibling&&(this.previousElementSibling.style.display=\'none\')" onerror="this.style.display=\'none\';this.previousElementSibling&&(this.previousElementSibling.textContent=\'sem imagem\')">'
       +'<div class="play">▶</div></div><div class="nm">'+esc(c.nome)+'</div></div>';
   }
@@ -313,7 +318,7 @@ button{font-family:inherit;cursor:pointer}
     $('mos_list').classList.add('hide'); $('mos_msg').classList.add('hide'); $('mos_detail').classList.remove('hide');
     var g=$('mos_grid');
     var tiles=(m.cameras||[]).map(function(cid){ return CAMMAP[cid] || {id:cid,nome:'Câmera',embed:''}; });
-    g.innerHTML=tiles.map(tileHtml).join('') || '<div class="msg">Mosaico sem câmeras.</div>'; wireTiles(g);
+    g.innerHTML=tiles.map(tileHtml).join('') || '<div class="msg">Mosaico sem câmeras.</div>'; wireTiles(g); loadStatus();
   }
 
   /* ---- alertas ---- */
@@ -475,7 +480,18 @@ button{font-family:inherit;cursor:pointer}
     }).catch(function(){ $('sup_list').innerHTML='<div class="msg">Erro ao carregar chamados.</div>'; });
   }
 
-  function start(){ view('app'); showTab('cam'); startRefresh(); loadCams().catch(function(e){ if((e&&e.message)!=='sessao'){ $('cam_empty').textContent='Erro ao carregar câmeras.'; $('cam_empty').classList.remove('hide'); } }); }
+  function loadStatus(){
+    api('GET','/api/portal/cameras-status').then(function(m){ m=m||{};
+      Array.prototype.forEach.call(document.querySelectorAll('.tile .stat[data-st]'),function(el){
+        var on=m[el.getAttribute('data-st')];
+        if(on===true){ el.className='stat on'; el.textContent='online'; }
+        else if(on===false){ el.className='stat off'; el.textContent='offline'; }
+      });
+      if(TAB==='cam' && CAMS.length){ var onc=CAMS.filter(function(c){return m[c.id]===true;}).length; $('count').textContent=CAMS.length+' câmera'+(CAMS.length>1?'s':'')+' · '+onc+' online'; }
+    }).catch(function(){});
+  }
+
+  function start(){ view('app'); showTab('cam'); if(!window.__cxStI){ window.__cxStI=setInterval(loadStatus,25000); } startRefresh(); loadCams().catch(function(e){ if((e&&e.message)!=='sessao'){ $('cam_empty').textContent='Erro ao carregar câmeras.'; $('cam_empty').classList.remove('hide'); } }); }
 
   applyBrand();
   $('l_btn').addEventListener('click',doLogin);

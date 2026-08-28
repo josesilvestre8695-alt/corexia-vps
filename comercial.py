@@ -1923,6 +1923,31 @@ def prov_cameras_api(req: Request):
             "gravacao": gravacao, "modulos": IA_MODULOS, "grav_tiers": GRAV_TIERS, "cameras": out}
 
 
+@router.get("/api/portal/cameras-status")
+def portal_cameras_status(req: Request):
+    u = _current_user(req)
+    if not u or not u.get("cliente_id"):
+        return JSONResponse({}, status_code=200)
+    cid = u.get("cliente_id")
+    try:
+        mtx = _mtx_ready()
+    except Exception:
+        mtx = set()
+    out = {}
+    c = _db()
+    for r in c.execute("SELECT id, data FROM entities WHERE entity='Camera'").fetchall():
+        try:
+            o = json.loads(r["data"])
+        except Exception:
+            continue
+        if o.get("cliente_id") != cid:
+            continue
+        sk = o.get("stream_key", "")
+        out[r["id"]] = bool(sk and sk in mtx)
+    c.close()
+    return out
+
+
 def _prov_camera_own(pid, cid):
     cam = _get_ent("Camera", cid)
     return cam if (cam and cam.get("provedor_id") == pid) else None
