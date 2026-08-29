@@ -474,6 +474,7 @@ _PROV_ITENS = [
     ("conciliacao", "Conciliacao", "Conciliação de Carteira"),
     ("cameras", "Cameras e IA", "Cameras e Analiticos"),
     ("gravacoes", "Gravacoes", "Gravacoes em Nuvem"),
+    ("timelapse", "Timelapse", "Timelapse"),
     ("heatmap", "Mapa de Calor", "Mapa de Calor"),
     ("acessos", "Acessos", "Controle de Acesso"),
     ("alertas", "Alertas", "Alertas"),
@@ -1605,8 +1606,13 @@ async function acLoad(){ try{
 """
 
 
+_PROV_TIMELAPSE_BODY = '<iframe src="/timelapse" style="width:100%;height:82vh;min-height:560px;border:0;border-radius:12px;background:#0b0d12"></iframe>'
+
+
 @router.get("/provedor/{slug}")
 def prov_generico(slug: str, req: Request):
+    if slug == "timelapse":
+        return _prov_shell("timelapse", "Timelapse", _PROV_TIMELAPSE_BODY, req)
     if slug == "conciliacao":
         return prov_conciliacao_page(req)
     if slug == "heatmap":
@@ -2890,6 +2896,29 @@ async def prov_camera_editar(cid: str, req: Request):
         patch["rtsp_url"] = (b.get("rtsp_url") or cam.get("rtsp_url", "")).strip()
     _update_ent("Camera", cid, patch)
     return {"success": True}
+
+
+@router.post("/api/comercial/prov/cameras/{cid}/rotacionar-chave")
+async def prov_camera_rotacionar(cid: str, req: Request):
+    u, pid = _prov_req(req)
+    if not pid:
+        return JSONResponse({"error": "sem permissao"}, status_code=403)
+    cam = _prov_camera_own(pid, cid)
+    if not cam:
+        return JSONResponse({"error": "camera nao encontrada ou sem acesso"}, status_code=403)
+    key = secrets.token_hex(8)
+    publico = bool(cam.get("publico", True))
+    rtmp_ingest = "rtmp://%s:1935/cam/%s" % (STREAM_INGEST_HOST, key)
+    emb_atual = cam.get("embed_url") or ""
+    if emb_atual.startswith("/watch/"):
+        embed = "/watch/%s" % key
+    else:
+        embed = "%s/%s/" % (STREAM_EMBED_BASE, key) if publico else ""
+    patch = {"stream_key": key, "rtmp_ingest": rtmp_ingest, "embed_url": embed}
+    if (cam.get("protocolo") or "rtmp").lower() == "rtmp":
+        patch["rtsp_url"] = "rtmp://127.0.0.1:1935/cam/%s" % key
+    _update_ent("Camera", cid, patch)
+    return {"success": True, "rtmp_ingest": rtmp_ingest, "embed_url": embed, "stream_key": key}
 
 
 @router.get("/api/comercial/prov/mosaicos")
@@ -5467,7 +5496,7 @@ _PROV_CAMERAS_BODY = """
  <label class="ck" style="margin:6px 0"><input type="checkbox" id="n_pub" checked> Link publico (permite incorporar a camera em outros sites)</label>
  <div id="n_addhint" style="font-size:12px;color:var(--muted);margin-bottom:6px">Ao salvar, geramos o <b>link RTMP</b> (vai dentro da camera) e o <b>link de incorporacao</b> (embed).</div>
  <div id="n_links" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px">
-  <div style="font-size:11px;color:var(--muted);margin-bottom:3px">Link RTMP (vai dentro da camera):</div><input id="n_rtmp_show" readonly onclick="this.select()" style="font-family:var(--mono);font-size:12px"><div style="margin:2px 0 6px"><button class="act" style="color:var(--accent)" onclick="cp('n_rtmp_show')">copiar RTMP</button></div>
+  <div style="font-size:11px;color:var(--muted);margin-bottom:3px">Link RTMP (vai dentro da camera):</div><input id="n_rtmp_show" readonly onclick="this.select()" style="font-family:var(--mono);font-size:12px"><div style="margin:2px 0 6px"><button class="act" style="color:var(--accent)" onclick="cp('n_rtmp_show')">copiar RTMP</button> <button class="act" style="color:var(--bad)" onclick="rotChave()">🔄 trocar chave</button></div>
   <div style="font-size:11px;color:var(--muted);margin-bottom:3px">Link de incorporacao (embed):</div><input id="n_embed_show" readonly onclick="this.select()" style="font-family:var(--mono);font-size:12px"><div style="margin-top:2px"><button class="act" style="color:var(--accent)" onclick="cp('n_embed_show')">copiar embed</button></div>
  </div>
  <div class="foot"><button onclick="document.getElementById('ovnew').classList.remove('open')">Cancelar</button><button class="btn-primary" id="nsave" onclick="salvarNova()">Criar camera</button></div></div></div>
@@ -5638,6 +5667,10 @@ async function buscaCep(){ var cep=($('loc_cep').value||'').replace(/\\D/g,''); 
 async function salvarLocal(){ var b={ cep:$('loc_cep').value.trim(), endereco:$('loc_end').value.trim(), bairro:$('loc_bairro').value.trim(), cidade:$('loc_cidade').value.trim(), uf:$('loc_uf').value.trim(), latitude:$('loc_lat').value.trim(), longitude:$('loc_lng').value.trim() };
  try{ await api('POST','/api/comercial/prov/cameras/'+$('loc_id').value+'/local',b); $('ovloc').classList.remove('open'); msg('Localizacao salva.',true); reload(); }catch(e){ msg('Erro: '+(e&&e.message||e)); } }
 function novaCam(){ ['n_nome','n_cep','n_end','n_bairro','n_cidade','n_uf','n_lat','n_lng','n_user','n_pass','n_rtsp'].forEach(function(i){$(i).value='';}); $('n_cepst').textContent=''; $('n_proto').value='rtmp'; $('n_audio').value='nao'; $('n_fuso').value='America/Sao_Paulo'; $('n_pub').checked=true; $('n_editid').value=''; $('nmt').textContent='Adicionar camera'; $('nsave').textContent='Criar camera'; $('n_links').style.display='none'; $('n_addhint').style.display='block'; $('n_pass').placeholder=''; nProto(); $('ovnew').classList.add('open'); }
+function rotChave(){ var id=$('n_editid').value; if(!id){ msg('Abra uma camera existente.'); return; }
+ if(!confirm('Trocar a chave RTMP desta camera? O link RTMP atual PARA de funcionar na hora; quem usa o link antigo perde o acesso, e voce reconfigura a camera com o link novo.')) return;
+ api('POST','/api/comercial/prov/cameras/'+id+'/rotacionar-chave',{}).then(function(r){ $('n_rtmp_show').value=r.rtmp_ingest||''; $('n_embed_show').value=r.embed_url||'(link publico desativado)'; msg('Chave trocada! Copie o novo RTMP e configure na camera.',true); reload(); }).catch(function(e){ msg('Erro ao trocar chave: '+(e&&e.message||e)); });
+}
 function editarCam(id){ var c=CAMS.filter(function(x){return x.id===id})[0]; if(!c)return;
  $('n_editid').value=id; $('nmt').textContent='Editar camera'; $('nsave').textContent='Salvar alteracoes'; $('n_addhint').style.display='none'; $('n_cepst').textContent='';
  $('n_nome').value=c.nome||''; $('n_cep').value=c.cep||''; $('n_end').value=c.endereco||''; $('n_bairro').value=c.bairro||''; $('n_cidade').value=c.cidade||''; $('n_uf').value=c.uf||'';

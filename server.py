@@ -1473,6 +1473,13 @@ async def webhook(req: Request):
         _camlink = (cam.get('embed_url', '') or '')
         if _camlink and not _camlink.startswith('http'):
             _camlink = 'https://www.grupocorexia.com.br' + (_camlink if _camlink.startswith('/') else '/' + _camlink)
+        _clip_ocorrido = ""
+        try:
+            _cam_id_ev = b.get("camera_id", "") or cam.get("id", "")
+            if _cam_id_ev:
+                _clip_ocorrido = _alerta_clip_url(_cam_id_ev, int(time.time()))
+        except Exception as _e:
+            print("[clip-ocorrido] erro:", _e)
         caption = (f"{emoji} *COREXIA SEGURANCA - {label}*\n\n"
                    f"👤 *Cliente:* {cliente_nome or 'N/A'}\n"
                    f"📷 *Camera:* {b.get('camera_nome', '')}\n"
@@ -1480,7 +1487,7 @@ async def webhook(req: Request):
                    f"🕐 *Horario:* {agora}\n"
                    + (f"📝 *Descricao:* {b.get('descricao', '')}\n" if b.get('descricao') else "")
                    + (f"\n📹 *Ver a camera ao vivo:*\n{_camlink}\n" if _camlink else "")
-                   + "\n_Sistema Corexia de vigilancia._")
+                   + (f"\n\U0001F3A5 *Video do ocorrido (40s antes):*\n{_clip_ocorrido}\n" if _clip_ocorrido else "") + "\n_Sistema Corexia de vigilancia._")
         # 1) CLIENTE final: so se a camera tem cliente c/ telefone E a PreferenciaAlerta permite
         if tel and cliente_id and _pref_notifica(cliente_id, tipo):
             enviado = envia_whatsapp(tel, caption, img_b64, provedor_id)
@@ -2291,6 +2298,278 @@ def grav_list(req: Request):
     out.sort(key=lambda x: x["inicio"])
     return out
 
+# ==================== TIMELAPSE (dias de gravacao -> video acelerado) ====================
+_TL_JOBS = {}
+_TL_DIR = "/tmp/corexia_timelapse"
+_TL_LOCK = threading.Lock()
+_TL_MAX_FRAMES = 1400          # teto de frames por timelapse (compute + tamanho)
+
+
+def _tl_sign(job_id, exp):
+    return hmac.new(_MEDIA_KEY, ("tl|%s|%s" % (job_id, exp)).encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _tl_reap():
+    import shutil
+    now = time.time()
+    try:
+        for jid in list(_TL_JOBS.keys()):
+            j = _TL_JOBS.get(jid)
+            if j and now - j.get("created", now) > 24 * 3600:
+                _TL_JOBS.pop(jid, None)
+        if os.path.isdir(_TL_DIR):
+            for d in os.listdir(_TL_DIR):
+                p = os.path.join(_TL_DIR, d)
+                try:
+                    if os.path.isdir(p) and now - os.stat(p).st_mtime > 24 * 3600:
+                        shutil.rmtree(p, ignore_errors=True)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
+def _tl_worker(job_id, cliente, camnome, d_ini, d_fim, passo_seg, h_ini, h_fim, fps):
+    import shutil
+    from concurrent.futures import ThreadPoolExecutor
+    job = _TL_JOBS[job_id]
+    jobdir = os.path.join(_TL_DIR, job_id)
+    try:
+        os.makedirs(jobdir, exist_ok=True)
+    except Exception:
+        pass
+    # 1) juntar os trechos elegiveis do periodo (por dia, por passo, por horario)
+    segs = []   # (relpath, date, seg_start_seconds)
+    dt = datetime.strptime(d_ini, "%Y-%m-%d")
+    dfim = datetime.strptime(d_fim, "%Y-%m-%d")
+    while dt <= dfim:
+        if job.get("cancel"):
+            job["status"] = "cancelado"; return
+        date = dt.strftime("%Y-%m-%d")
+        folder = "%s/%s/%s" % (cliente, _rec_week(dt), date)
+        daysegs = []
+        for f in _rec_browse(folder):
+            nm = f.get("name") or ""
+            if f.get("is_dir") or not nm.endswith(".mp4") or not nm.startswith(camnome + "_"):
+                continue
+            try:
+                h, m, s = [int(x) for x in nm[len(camnome) + 1:-4].split("-")[:3]]
+            except Exception:
+                continue
+            if h_ini is not None and not (h_ini <= h < h_fim):
+                continue
+            daysegs.append((h * 3600 + m * 60 + s, nm))
+        daysegs.sort()
+        for i, (st, nm) in enumerate(daysegs):
+            if i % passo_seg == 0:
+                segs.append((folder + "/" + nm, date, st))
+        dt += timedelta(days=1)
+    if not segs:
+        job["status"] = "vazio"; job["fatal"] = "Nao ha gravacao nesse periodo/horario para esta camera."; return
+    segs.sort(key=lambda x: (x[1], x[2]))
+    # subamostra uniforme se passar do teto
+    if len(segs) > _TL_MAX_FRAMES:
+        step = len(segs) / float(_TL_MAX_FRAMES)
+        segs = [segs[int(i * step)] for i in range(_TL_MAX_FRAMES)]
+    job["total"] = len(segs)
+
+    def _grab(item):
+        i, (relpath, date, st) = item
+        if job.get("cancel"):
+            return None
+        src = _rec_signed_url(relpath, 1800)
+        fp = os.path.join(jobdir, "f%06d.jpg" % i)
+        try:
+            subprocess.run(["ffmpeg", "-nostdin", "-y", "-loglevel", "error", "-ss", "1", "-i", src,
+                            "-frames:v", "1", "-vf", "scale=1280:-2", "-q:v", "4", fp],
+                           timeout=45, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            return None
+        with _TL_LOCK:
+            job["processed"] = job.get("processed", 0) + 1
+        return (i, fp) if (os.path.exists(fp) and os.path.getsize(fp) > 0) else None
+
+    got = []
+    try:
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            for res in ex.map(_grab, list(enumerate(segs))):
+                if res:
+                    got.append(res)
+                if job.get("cancel"):
+                    break
+    except Exception as e:
+        job["msgs"] = (job.get("msgs") or []) + ["erro: " + str(e)[:120]]
+    if job.get("cancel"):
+        job["status"] = "cancelado"; return
+    if not got:
+        job["status"] = "erro"; job["fatal"] = "Nao consegui extrair quadros (gravacao indisponivel)."; return
+    # renumera em ordem cronologica p/ o ffmpeg montar
+    got.sort(key=lambda x: x[0])
+    for idx, (_i, fp) in enumerate(got):
+        tgt = os.path.join(jobdir, "s%06d.jpg" % idx)
+        try:
+            if fp != tgt:
+                os.rename(fp, tgt)
+        except Exception:
+            pass
+    job["montando"] = True
+    out = os.path.join(jobdir, "timelapse.mp4")
+    try:
+        subprocess.run(["ffmpeg", "-nostdin", "-y", "-loglevel", "error", "-framerate", str(fps),
+                        "-i", os.path.join(jobdir, "s%06d.jpg"),
+                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                        "-pix_fmt", "yuv420p", "-movflags", "+faststart", out],
+                       timeout=420, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        job["status"] = "erro"; job["fatal"] = "Falha ao montar o video."; return
+    if not (os.path.exists(out) and os.path.getsize(out) > 0):
+        job["status"] = "erro"; job["fatal"] = "Video final vazio."; return
+    # limpa os jpg (guarda so o mp4)
+    try:
+        for fn in os.listdir(jobdir):
+            if fn.endswith(".jpg"):
+                os.remove(os.path.join(jobdir, fn))
+    except Exception:
+        pass
+    job["out"] = out; job["frames"] = len(got); job["status"] = "done"
+
+
+@app.get("/api/timelapse/cameras")
+def tl_cameras(req: Request):
+    u = current_user(req)
+    if not u:
+        return _unauth()
+    out = [{"id": c["id"], "nome": c.get("nome", ""), "cliente_nome": c.get("cliente_nome", "")}
+           for c in _gravacoes_visiveis(u)]
+    out.sort(key=lambda x: ((x.get("cliente_nome") or "").lower(), (x.get("nome") or "").lower()))
+    return out
+
+
+@app.post("/api/timelapse/iniciar")
+async def tl_iniciar(req: Request):
+    u = current_user(req)
+    if not u:
+        return _unauth()
+    try:
+        b = await req.json()
+    except Exception:
+        b = {}
+    cam_id = (b.get("camera_id") or "").strip()
+    cam = next((c for c in _gravacoes_visiveis(u) if c["id"] == cam_id), None)
+    if not cam:
+        return _forbidden("camera nao encontrada ou sem acesso")
+    try:
+        d0 = datetime.strptime((b.get("data_inicio") or "").strip(), "%Y-%m-%d")
+        d1 = datetime.strptime((b.get("data_fim") or "").strip(), "%Y-%m-%d")
+    except Exception:
+        return JSONResponse({"error": "datas invalidas"}, status_code=400)
+    if d1 < d0:
+        d0, d1 = d1, d0
+    if (d1 - d0).days > 92:
+        return JSONResponse({"error": "periodo maximo de 92 dias por timelapse"}, status_code=400)
+    try:
+        passo = max(1, min(int(b.get("passo_seg") or 1), 192))
+        fps = max(4, min(int(b.get("fps") or 24), 60))
+    except Exception:
+        return JSONResponse({"error": "parametros invalidos"}, status_code=400)
+    diurno = bool(b.get("diurno"))
+    h_ini = h_fim = None
+    if diurno:
+        try:
+            h_ini = max(0, min(int(b.get("hora_ini") or 6), 23))
+            h_fim = max(h_ini + 1, min(int(b.get("hora_fim") or 18), 24))
+        except Exception:
+            h_ini, h_fim = 6, 18
+    cliente = _rec_safe(cam.get("cliente_nome") or "SEM_CLIENTE")
+    camnome = _rec_safe(cam.get("nome") or "")
+    _tl_reap()
+    job_id = secrets.token_hex(8)
+    _TL_JOBS[job_id] = {"user_id": u.get("id"), "status": "running", "processed": 0, "total": 0,
+                        "created": time.time(), "cam_nome": cam.get("nome", ""), "montando": False,
+                        "frames": 0, "fatal": None, "cancel": False, "msgs": []}
+    threading.Thread(target=_tl_worker, args=(job_id, cliente, camnome, d0.strftime("%Y-%m-%d"),
+                     d1.strftime("%Y-%m-%d"), passo, h_ini, h_fim, fps), daemon=True).start()
+    return {"job_id": job_id}
+
+
+@app.get("/api/timelapse/status")
+def tl_status(req: Request):
+    u = current_user(req)
+    if not u:
+        return _unauth()
+    jid = req.query_params.get("job", "")
+    job = _TL_JOBS.get(jid)
+    if not job or job.get("user_id") != u.get("id"):
+        return JSONResponse({"error": "job nao encontrado"}, status_code=404)
+    out = {"status": job.get("status"), "processed": job.get("processed", 0), "total": job.get("total", 0),
+           "montando": bool(job.get("montando")), "frames": job.get("frames", 0), "erro": job.get("fatal"),
+           "cam_nome": job.get("cam_nome", "")}
+    if job.get("status") == "done" and job.get("out"):
+        exp = int(time.time()) + 24 * 3600
+        base = os.getenv("PANEL_BASE", "https://grupocorexia.com.br").rstrip("/")
+        out["share_url"] = "%s/api/timelapse/dl?job=%s&exp=%d&sig=%s" % (base, jid, exp, _tl_sign(jid, exp))
+        out["video_url"] = "/api/timelapse/video?job=" + jid
+    return out
+
+
+@app.post("/api/timelapse/cancelar")
+async def tl_cancelar(req: Request):
+    u = current_user(req)
+    if not u:
+        return _unauth()
+    try:
+        b = await req.json()
+    except Exception:
+        b = {}
+    job = _TL_JOBS.get((b.get("job") or "").strip())
+    if job and job.get("user_id") == u.get("id"):
+        job["cancel"] = True
+    return {"ok": True}
+
+
+@app.get("/api/timelapse/video")
+def tl_video(req: Request):
+    u = current_user(req, allow_query_token=True)
+    if not u:
+        return _unauth()
+    jid = re.sub(r"[^a-f0-9]", "", (req.query_params.get("job") or ""))[:32]
+    job = _TL_JOBS.get(jid)
+    if not job or job.get("user_id") != u.get("id"):
+        return JSONResponse({"error": "job nao encontrado"}, status_code=404)
+    p = job.get("out")
+    if not p or not os.path.exists(p):
+        return JSONResponse({"error": "sem video"}, status_code=404)
+    return FileResponse(p, media_type="video/mp4", filename="timelapse.mp4")
+
+
+@app.get("/api/timelapse/dl")
+def tl_dl(req: Request):
+    from starlette.responses import PlainTextResponse
+    q = req.query_params
+    jid = re.sub(r"[^a-f0-9]", "", (q.get("job") or ""))[:32]
+    sig = (q.get("sig") or "").split("?")[0]
+    try:
+        exp = int(q.get("exp") or 0)
+    except Exception:
+        return PlainTextResponse("Link invalido.", status_code=400)
+    if not (jid and exp and sig):
+        return PlainTextResponse("Link invalido.", status_code=400)
+    if exp < int(time.time()):
+        return PlainTextResponse("Link expirado. Gere um novo pelo portal.", status_code=410)
+    if not hmac.compare_digest(sig, _tl_sign(jid, exp)):
+        return PlainTextResponse("Assinatura invalida.", status_code=403)
+    p = os.path.join(_TL_DIR, jid, "timelapse.mp4")
+    if not os.path.exists(p):
+        return PlainTextResponse("Este timelapse expirou (guardamos por 24h). Gere de novo pelo portal.", status_code=410)
+    return FileResponse(p, media_type="video/mp4", filename="timelapse.mp4")
+
+
+@app.get("/timelapse")
+def timelapse_page():
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "timelapse.html")
+    return FileResponse(p, media_type="text/html")
+
+
 @app.get("/api/gravacoes/sharelink")
 def grav_sharelink(req: Request):
     """Link temporario (default 7 dias) de UMA gravacao, escopado ao cliente (baixar/compartilhar)."""
@@ -2359,6 +2638,93 @@ def _clip_signed_url(relpath, start, dur, ttl=7 * 86400):
     sig = _clip_sign(relpath, start_s, dur_s, exp)
     base = os.getenv("PANEL_BASE", "https://grupocorexia.com.br").rstrip("/")
     return "%s/api/gravacoes/clip-dl?path=%s&start=%s&dur=%s&exp=%s&sig=%s" % (base, quote(relpath), start_s, dur_s, exp, sig)
+
+
+def _alerta_clip_sign(cam_id, epoch, exp):
+    return hmac.new(_MEDIA_KEY, ("aclip|%s|%s|%s" % (cam_id, epoch, exp)).encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _alerta_clip_url(cam_id, epoch, antes=40, ttl=7 * 86400):
+    exp = int(time.time()) + int(ttl)
+    sig = _alerta_clip_sign(cam_id, int(epoch), exp)
+    base = os.getenv("PANEL_BASE", "https://grupocorexia.com.br").rstrip("/")
+    return "%s/api/alerta/clip?c=%s&t=%d&a=%d&exp=%d&sig=%s" % (base, cam_id, int(epoch), int(antes), exp, sig)
+
+
+@app.get("/api/alerta/clip")
+def alerta_clip(req: Request):
+    """Video do ocorrido (link do WhatsApp do alerta). Resolve no clique: trecho ORGANIZADO
+    que contem o evento; se ainda nao migrou, cai no _staging (gravacao em andamento)."""
+    from starlette.responses import PlainTextResponse
+    q = req.query_params
+    cam_id = (q.get("c") or "").strip()
+    sig = (q.get("sig") or "").split("?")[0]
+    try:
+        epoch = int(q.get("t") or 0); exp = int(q.get("exp") or 0); antes = int(q.get("a") or 40)
+    except Exception:
+        return PlainTextResponse("Link invalido.", status_code=400)
+    if not (cam_id and epoch and exp and sig):
+        return PlainTextResponse("Link invalido.", status_code=400)
+    if exp < int(time.time()):
+        return PlainTextResponse("Link expirado. Peca um novo pelo portal.", status_code=410)
+    if not hmac.compare_digest(sig, _alerta_clip_sign(cam_id, epoch, exp)):
+        return PlainTextResponse("Assinatura invalida.", status_code=403)
+    cam = _get_entity("Camera", cam_id)
+    if not cam:
+        return PlainTextResponse("Camera nao encontrada.", status_code=404)
+    key = cam.get("stream_key", "")
+    cliente = _rec_safe(cam.get("cliente_nome") or "SEM_CLIENTE")
+    camnome = _rec_safe(cam.get("nome") or "")
+    dt = datetime.fromtimestamp(epoch)
+    date = dt.strftime("%Y-%m-%d")
+    ev_sec = dt.hour * 3600 + dt.minute * 60 + dt.second
+    relpath = None; offset = 0.0
+    # 1) trecho ORGANIZADO que contem o evento
+    try:
+        folder = "%s/%s/%s" % (cliente, _rec_week(dt), date)
+        best = None
+        for f in _rec_browse(folder):
+            nm = f.get("name") or ""
+            if f.get("is_dir") or not nm.endswith(".mp4") or not nm.startswith(camnome + "_"):
+                continue
+            try:
+                h, m, s = [int(x) for x in nm[len(camnome) + 1:-4].split("-")[:3]]
+            except Exception:
+                continue
+            st = h * 3600 + m * 60 + s
+            if st <= ev_sec and (best is None or st > best[0]):
+                best = (st, nm)
+        if best and (ev_sec - best[0]) <= 1200:
+            relpath = folder + "/" + best[1]; offset = ev_sec - best[0]
+    except Exception:
+        pass
+    # 2) fallback: gravacao EM ANDAMENTO no _staging
+    if relpath is None and key:
+        try:
+            sfolder = "_staging/cam/%s" % key
+            best = None
+            for f in _rec_browse(sfolder):
+                nm = f.get("name") or ""
+                if f.get("is_dir") or not nm.endswith(".mp4"):
+                    continue
+                parts = nm[:-4].split("_")
+                if len(parts) < 2 or parts[0] != date:
+                    continue
+                try:
+                    h, m, s = [int(x) for x in parts[1].split("-")[:3]]
+                except Exception:
+                    continue
+                st = h * 3600 + m * 60 + s
+                if st <= ev_sec and (best is None or st > best[0]):
+                    best = (st, nm)
+            if best:
+                relpath = sfolder + "/" + best[1]; offset = ev_sec - best[0]
+        except Exception:
+            pass
+    if relpath is None:
+        return PlainTextResponse("O video do ocorrido ainda esta sendo processado. Tente de novo em alguns minutos.", status_code=202)
+    start = max(0.0, float(offset) - float(antes)); dur = float(antes) + 20.0
+    return RedirectResponse(_clip_signed_url(relpath, start, dur), status_code=302)
 
 
 @app.get("/api/gravacoes/clip-dl")

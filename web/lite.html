@@ -33,6 +33,13 @@ button{font-family:inherit;cursor:pointer}
 .tile .thumb .stat.on{color:#34d399;border-color:rgba(52,211,153,.5)}
 .tile .thumb .stat.off{color:#f87171;border-color:rgba(248,113,113,.5)}
 .tile .nm{padding:8px 11px;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.lgrid.one{grid-template-columns:1fr}
+.ltile{position:relative;aspect-ratio:16/9;background:#05070a;border:1px solid var(--border);border-radius:12px;overflow:hidden;cursor:pointer}
+.ltile iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;pointer-events:none}
+.ltile .lnm{position:absolute;left:0;right:0;bottom:0;z-index:2;padding:12px 9px 5px;font-size:11px;font-weight:600;color:#fff;background:linear-gradient(transparent,rgba(0,0,0,.75));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+.ltile .lexp{position:absolute;top:6px;right:6px;z-index:3;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.22);color:#fff;border-radius:8px;font-size:12px;line-height:1;padding:5px 8px}
+.ltile .lph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:11px;text-align:center;padding:6px}
 .msg{color:var(--muted);font-size:14px;padding:30px 4px;text-align:center}
 .msg.err{color:var(--bad)}
 .mrow{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:14px;cursor:pointer;margin-bottom:10px}
@@ -80,6 +87,16 @@ button{font-family:inherit;cursor:pointer}
 .ov .ovbody{flex:1;position:relative;min-height:0;background:#000;display:flex;align-items:center;justify-content:center}
 .ov .ovbody iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000}
 .ov .ovbody video{width:100%;height:100%;object-fit:contain;background:#000}
+.ov .ovbody.rec{flex-direction:column;align-items:stretch;justify-content:flex-start}
+.ov .ovbody.rec video{position:relative;flex:1;min-height:0;width:100%;height:auto}
+.recbar{flex:none;background:rgba(6,8,12,.96);border-top:1px solid var(--border);padding:8px 10px calc(env(safe-area-inset-bottom) + 8px);display:flex;flex-direction:column;gap:7px}
+.recbar .rrow{display:flex;gap:7px;flex-wrap:wrap;align-items:center;justify-content:center}
+.recbar button{border:1px solid var(--border);background:var(--surface2);color:var(--ink);border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:600}
+.recbar button.pri{background:var(--accent);color:#160d03;border:none}
+.recbar button:active{opacity:.7}
+.recbar .rlbl{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.cxtoast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 26px);transform:translateX(-50%);z-index:100;background:#1f2937;color:#fff;padding:10px 18px;border-radius:22px;font-size:13px;font-weight:600;box-shadow:0 6px 20px rgba(0,0,0,.45);max-width:88vw;text-align:center}
+.cxtoast.ok{background:#065f46}
 .ov .ovbody img{max-width:100%;max-height:100%;object-fit:contain}
 .ov .ovload{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:14px;pointer-events:none}
 /* conta = overlay com fundo do app (scroll) */
@@ -145,6 +162,7 @@ button{font-family:inherit;cursor:pointer}
 
     <section id="tab_more" class="hide">
       <button class="bigbtn" id="btn_busca"><b>🔎 Pergunte ao Corexia</b><small>busca por IA nas suas gravações</small></button>
+      <button class="bigbtn" id="btn_timelapse"><b>🎞️ Timelapse</b><small>dias de gravação em segundos</small></button>
       <button class="bigbtn" id="btn_suporte"><b>🎫 Suporte</b><small>abrir chamado / ver respostas</small></button>
       <div class="sechd">Faturas</div>
       <div id="f_list"></div>
@@ -256,7 +274,7 @@ button{font-family:inherit;cursor:pointer}
   }
   function logout(){ closeOv(); $('conta').classList.add('hide'); try{ localStorage.removeItem('corexia_token'); }catch(e){} TOKEN=null; stopRefresh(); view('login'); }
 
-  function showTab(t){ TAB=t;
+  function showTab(t){ if(TAB==='mos' && t!=='mos'){ closeMosLive(); } TAB=t;
     ['cam','mos','alerts','rec','more'].forEach(function(x){ $('tab_'+x).classList.toggle('hide', x!==t); });
     Array.prototype.forEach.call(document.querySelectorAll('.nav button'),function(bt){ bt.classList.toggle('on', bt.getAttribute('data-tab')===t); });
     if(t==='mos' && !MOS.length) loadMos();
@@ -316,10 +334,19 @@ button{font-family:inherit;cursor:pointer}
   function openMos(id){
     var m=MOS.filter(function(x){return (x.id||x._id)===id;})[0]; if(!m) return;
     $('mos_list').classList.add('hide'); $('mos_msg').classList.add('hide'); $('mos_detail').classList.remove('hide');
+    var cams=(m.cameras||[]).map(function(cid){ return CAMMAP[cid] || {id:cid,nome:'Câmera',embed:''}; });
     var g=$('mos_grid');
-    var tiles=(m.cameras||[]).map(function(cid){ return CAMMAP[cid] || {id:cid,nome:'Câmera',embed:''}; });
-    g.innerHTML=tiles.map(tileHtml).join('') || '<div class="msg">Mosaico sem câmeras.</div>'; wireTiles(g); loadStatus();
+    if(!cams.length){ g.className=''; g.innerHTML='<div class="msg">Mosaico sem câmeras.</div>'; return; }
+    g.className='lgrid'+(cams.length===1?' one':'');
+    g.innerHTML=cams.map(function(c){
+      var inner = c.embed
+        ? '<iframe allow="autoplay; encrypted-media" scrolling="no" src="'+esc(c.embed)+'"></iframe><button class="lexp" title="Ampliar">⤢</button>'
+        : '<div class="lph">câmera sem player</div>';
+      return '<div class="ltile" data-embed="'+esc(c.embed||'')+'" data-nome="'+esc(c.nome)+'">'+inner+'<span class="lnm">'+esc(c.nome)+'</span></div>';
+    }).join('');
+    Array.prototype.forEach.call(g.querySelectorAll('.ltile'),function(t){ t.addEventListener('click',function(){ var e=t.getAttribute('data-embed'); if(e) openLive(e,t.getAttribute('data-nome')); }); });
   }
+  function closeMosLive(){ var g=$('mos_grid'); if(g) g.innerHTML=''; $('mos_detail').classList.add('hide'); $('mos_list').classList.remove('hide'); }
 
   /* ---- alertas ---- */
   function loadAlerts(){
@@ -375,8 +402,57 @@ button{font-family:inherit;cursor:pointer}
     f.addEventListener('load',function(){ var l=b.querySelector('.ovload'); if(l)l.style.display='none'; }); b.appendChild(f);
   }
   function openImg(url,nome){ openOv(nome).innerHTML='<img src="'+esc(url)+'" alt="">'; }
-  function openRec(url,nome){ openOv(nome).innerHTML='<video src="'+esc(url)+'" controls autoplay playsinline></video>'; }
-  function closeOv(){ $('ov').classList.add('hide'); $('ov_body').innerHTML=''; }
+  function toast(m,ok){ var t=document.createElement('div'); t.className='cxtoast'+(ok?' ok':''); t.textContent=m; document.body.appendChild(t); setTimeout(function(){ try{t.remove();}catch(e){} },2800); }
+  function openRec(url,nome){
+    var b=openOv(nome); b.classList.add('rec');
+    var rp=''; try{ var pp=(url||'').split('/rec/')[1]; rp=pp?decodeURIComponent(pp.split('?')[0]):''; }catch(e){}
+    var S=null, E=null;
+    b.innerHTML='<video id="rec_v" src="'+esc(url)+'" controls autoplay playsinline></video>'
+      +'<div class="recbar">'
+      +'<div class="rrow"><span class="rlbl" id="rec_lbl">Recorte: início -- · fim --</span></div>'
+      +'<div class="rrow"><button id="rb_i">⏱ Início</button><button id="rb_f">⏱ Fim</button><button class="pri" id="rb_cut">✂ Recortar e baixar</button></div>'
+      +'<div class="rrow"><button id="rb_dl">⬇ Baixar</button><button id="rb_link">🔗 Copiar link</button><button id="rb_mail">✉ E-mail</button></div>'
+      +'</div>';
+    var v=$('rec_v');
+    function fmt(s){ s=Math.max(0,Math.floor(s)); var m=Math.floor(s/60),x=s%60; return (m<10?'0':'')+m+':'+(x<10?'0':'')+x; }
+    function upd(){ $('rec_lbl').textContent='Recorte: início '+(S!=null?fmt(S):'--')+' · fim '+(E!=null?fmt(E):'--'); }
+    $('rb_i').onclick=function(){ S=v.currentTime; if(E!=null&&E<=S)E=null; upd(); toast('Início marcado',1); };
+    $('rb_f').onclick=function(){ E=v.currentTime; upd(); toast('Fim marcado',1); };
+    $('rb_cut').onclick=function(){
+      if(!rp){ toast('Trecho não identificado'); return; }
+      if(S==null||E==null){ toast('Marque início e fim'); return; }
+      if(E<=S){ toast('O fim deve ser depois do início'); return; }
+      var dur=E-S; if(dur>300){ toast('Recorte máximo de 5 min'); return; }
+      toast('Recortando '+fmt(dur)+'… aguarde',1);
+      var u='/api/gravacoes/clip?path='+encodeURIComponent(rp)+'&start='+S.toFixed(1)+'&dur='+dur.toFixed(1)+'&t='+tq();
+      var a=document.createElement('a'); a.href=u; a.download=''; document.body.appendChild(a); a.click(); a.remove();
+    };
+    $('rb_dl').onclick=function(){
+      if(!rp){ toast('Trecho não identificado'); return; }
+      toast('Preparando download…',1);
+      api('GET','/api/gravacoes/sharelink?dias=7&path='+encodeURIComponent(rp)).then(function(j){
+        if(j&&j.url){ var a=document.createElement('a'); a.href=j.url; a.target='_blank'; a.rel='noopener'; document.body.appendChild(a); a.click(); a.remove(); }
+        else toast('Não consegui gerar o download');
+      }).catch(function(){ toast('Erro ao baixar'); });
+    };
+    $('rb_link').onclick=function(){
+      if(!rp){ toast('Trecho não identificado'); return; }
+      api('GET','/api/gravacoes/sharelink?dias=7&path='+encodeURIComponent(rp)).then(function(j){
+        if(j&&j.url){ if(navigator.clipboard){ navigator.clipboard.writeText(j.url).then(function(){ toast('Link copiado! (vale 7 dias)',1); }, function(){ prompt('Copie o link (7 dias):', j.url); }); } else prompt('Copie o link (7 dias):', j.url); }
+        else toast('Não consegui gerar o link');
+      }).catch(function(){ toast('Erro ao gerar link'); });
+    };
+    $('rb_mail').onclick=function(){
+      if(!rp){ toast('Trecho não identificado'); return; }
+      var to=prompt('E-mail(s) do destinatário (separe por vírgula):',''); if(!to)return;
+      var m=prompt('Mensagem (opcional):','')||'';
+      var body={path:rp,to:to,msg:m};
+      if(S!=null&&E!=null&&E>S){ body.start=S; body.dur=E-S; }
+      toast('Enviando…',1);
+      api('POST','/api/gravacoes/email',body).then(function(j){ toast((j&&j.success)?'Enviado! O link foi pro e-mail.':((j&&j.error)||'Falha ao enviar'), (j&&j.success)?1:0); }).catch(function(){ toast('Erro ao enviar'); });
+    };
+  }
+  function closeOv(){ $('ov').classList.add('hide'); $('ov_body').classList.remove('rec'); $('ov_body').innerHTML=''; }
 
   /* ---- conta: trocar senha + guarda ---- */
   function openConta(){ $('conta').classList.remove('hide'); $('pw_a').value=$('pw_b').value=$('pw_c').value=''; $('pw_msg').textContent=''; loadPref(); loadGuarda(); }
@@ -426,6 +502,10 @@ button{font-family:inherit;cursor:pointer}
   }
   function openBusca(){ var b=openOv('Pergunte ao Corexia'); b.innerHTML='';
     var f=document.createElement('iframe'); f.setAttribute('allow','fullscreen'); f.src='/portal/busca?t='+tq();
+    f.style.cssText='position:absolute;inset:0;width:100%;height:100%;border:0;background:#0b0d12'; b.appendChild(f);
+  }
+  function openTimelapse(){ var b=openOv('Timelapse'); b.innerHTML='';
+    var f=document.createElement('iframe'); f.setAttribute('allow','fullscreen'); f.src='/timelapse?t='+tq();
     f.style.cssText='position:absolute;inset:0;width:100%;height:100%;border:0;background:#0b0d12'; b.appendChild(f);
   }
 
@@ -504,9 +584,10 @@ button{font-family:inherit;cursor:pointer}
   $('pw_btn').addEventListener('click',changePw);
   $('pf_btn').addEventListener('click',savePref);
   $('ov_x').addEventListener('click',closeOv);
-  $('mos_back').addEventListener('click',function(){ $('mos_detail').classList.add('hide'); $('mos_list').classList.remove('hide'); });
+  $('mos_back').addEventListener('click',closeMosLive);
   $('r_cam').addEventListener('change',onRecCam);
   $('btn_busca').addEventListener('click',openBusca);
+  $('btn_timelapse').addEventListener('click',openTimelapse);
   $('btn_suporte').addEventListener('click',openSuporte);
   $('sup_x').addEventListener('click',closeSuporte);
   $('sup_btn').addEventListener('click',abrirChamado);

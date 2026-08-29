@@ -21,6 +21,8 @@ rtspAddress: :8554
 hls: yes
 hlsAddress: :8888
 hlsAllowOrigin: '*'
+hlsAlwaysRemux: yes
+hlsVariant: mpegts
 
 # Gravacao 24/7 de TUDO que publicar (segmentos de ~1h), gravando primeiro num staging;
 # o hook joga cada segmento pronto em /gravacoes/<Cliente>/<semana>/<dia>/.

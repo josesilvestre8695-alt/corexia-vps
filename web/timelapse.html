@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Timelapse · Corexia</title>
+<style>
+:root{--bg:#0b0d12;--surface:#12151b;--surface2:#171b22;--border:#262d38;--ink:#f2f4f6;--muted:#8b96a6;--accent:#22d3a8;--accent2:#0ea371;--bad:#f87171;--radius:14px}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:720px;margin:0 auto;padding:calc(env(safe-area-inset-top) + 16px) 16px 48px}
+h1{font-size:20px;margin:0 0 2px;display:flex;align-items:center;gap:9px}
+h1 .em{font-size:24px}
+.sub{color:var(--muted);font-size:13px;margin:0 0 20px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:14px}
+label{display:block;font-size:12px;color:var(--muted);margin:0 0 5px;text-transform:uppercase;letter-spacing:.05em}
+select,input[type=date]{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--ink);padding:12px;font-size:15px}
+select:focus,input:focus{outline:none;border-color:var(--accent)}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+.row>div{flex:1;min-width:140px}
+.fld{margin-bottom:14px}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{font-size:13px;padding:9px 14px;border-radius:999px;border:1px solid var(--border);background:var(--surface2);color:var(--muted);cursor:pointer;user-select:none}
+.chip.on{background:rgba(34,211,168,.16);border-color:var(--accent);color:#a7f3d9}
+.tog{display:flex;align-items:center;gap:9px;cursor:pointer;color:var(--ink);font-size:14px;text-transform:none;letter-spacing:0}
+.tog input{width:18px;height:18px;accent-color:var(--accent)}
+.btn{width:100%;background:linear-gradient(180deg,var(--accent),var(--accent2));color:#062018;border:none;border-radius:12px;padding:15px;font-size:16px;font-weight:800;cursor:pointer;margin-top:4px}
+.btn:disabled{opacity:.55;cursor:default}
+.btn.ghost{background:var(--surface2);color:var(--ink);border:1px solid var(--border);font-weight:600}
+.msg{font-size:13.5px;color:var(--muted);margin-top:10px;min-height:18px}
+.msg.err{color:var(--bad)}
+.prog{margin-top:14px;display:none}
+.bar{height:10px;background:var(--surface2);border:1px solid var(--border);border-radius:999px;overflow:hidden}
+.bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent2),var(--accent));transition:width .4s}
+.spin{width:15px;height:15px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;display:inline-block;animation:sp .8s linear infinite;vertical-align:-3px;margin-right:7px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.result{display:none;margin-top:6px}
+video{width:100%;border-radius:12px;background:#000;display:block}
+.resbtns{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
+.resbtns button{flex:1;min-width:130px}
+.hint{color:var(--muted);font-size:12px;margin-top:8px;line-height:1.45}
+a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1><span class="em">🎞️</span> Timelapse</h1>
+  <p class="sub">Transforme dias de gravação em segundos de evolução. Escolha a câmera e o período.</p>
+
+  <div class="card" id="form">
+    <div class="fld"><label>Câmera</label><select id="cam"><option value="">carregando…</option></select></div>
+    <div class="row fld">
+      <div><label>Início</label><input id="di" type="date"></div>
+      <div><label>Fim</label><input id="df" type="date"></div>
+    </div>
+    <div class="fld"><label>Densidade (quantos quadros)</label>
+      <div class="chips" id="dens">
+        <span class="chip" data-p="1">Detalhado (~15 min)</span>
+        <span class="chip on" data-p="4">1 por hora</span>
+        <span class="chip" data-p="12">1 a cada 3h</span>
+        <span class="chip" data-p="96">1 por dia</span>
+      </div>
+    </div>
+    <div class="fld"><label>Velocidade do vídeo</label>
+      <div class="chips" id="spd">
+        <span class="chip" data-f="12">Suave</span>
+        <span class="chip on" data-f="24">Padrão</span>
+        <span class="chip" data-f="30">Rápido</span>
+      </div>
+    </div>
+    <div class="fld">
+      <label class="tog"><input type="checkbox" id="diurno"> Somente horário diurno (pular a noite)</label>
+      <div class="row" id="hbox" style="display:none;margin-top:10px">
+        <div><label>Das</label><select id="hi"></select></div>
+        <div><label>Até</label><select id="hf"></select></div>
+      </div>
+    </div>
+    <button class="btn" id="go">Gerar timelapse</button>
+    <div class="msg" id="msg"></div>
+    <div class="hint">Períodos longos levam alguns minutos (roda em segundo plano). Máximo de 92 dias por vídeo; guardamos o resultado por 24h.</div>
+  </div>
+
+  <div class="card prog" id="prog">
+    <div style="font-weight:700;margin-bottom:8px" id="pt"><span class="spin"></span>Preparando…</div>
+    <div class="bar"><i id="pb"></i></div>
+    <div class="msg" id="pmsg"></div>
+    <button class="btn ghost" id="cancel" style="margin-top:12px">Cancelar</button>
+  </div>
+
+  <div class="card result" id="result">
+    <video id="vid" controls playsinline></video>
+    <div class="resbtns">
+      <button class="btn" id="dl">⬇️ Baixar</button>
+      <button class="btn ghost" id="share">🔗 Copiar link</button>
+      <button class="btn ghost" id="again">↺ Novo timelapse</button>
+    </div>
+    <div class="msg" id="rmsg"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var TOKEN = new URLSearchParams(location.search).get('t') || (function(){try{return localStorage.getItem('corexia_token')}catch(e){return ''}})() || '';
+  function $(id){return document.getElementById(id);}
+  function api(m,p,b){return fetch(p,{method:m,headers:{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined})
+    .then(function(r){ if(r.status===401){throw new Error('sessao');} if(!r.ok)return r.text().then(function(t){throw new Error((t||'').slice(0,120)||('HTTP '+r.status));}); return r.status===204?null:r.json(); });}
+  var PASSO=4, FPS=24, JOB=null, POLL=null;
+
+  // horas nos selects
+  for(var h=0;h<24;h++){ var o1=document.createElement('option');o1.value=h;o1.textContent=(h<10?'0':'')+h+':00';$('hi').appendChild(o1);
+    var o2=document.createElement('option');o2.value=h+1;o2.textContent=((h+1)<10?'0':'')+(h+1)+':00';$('hf').appendChild(o2); }
+  $('hi').value=6; $('hf').value=18;
+
+  // datas padrao: ultimos 7 dias
+  var today=new Date(), wk=new Date(today.getTime()-6*86400000);
+  function iso(d){return d.toISOString().slice(0,10);}
+  $('df').value=iso(today); $('di').value=iso(wk);
+
+  function chipWire(host, cb){ Array.prototype.forEach.call($(host).querySelectorAll('.chip'),function(c){ c.addEventListener('click',function(){ Array.prototype.forEach.call($(host).querySelectorAll('.chip'),function(x){x.classList.remove('on');}); c.classList.add('on'); cb(c); }); }); }
+  chipWire('dens',function(c){ PASSO=parseInt(c.getAttribute('data-p'),10); });
+  chipWire('spd',function(c){ FPS=parseInt(c.getAttribute('data-f'),10); });
+  $('diurno').addEventListener('change',function(){ $('hbox').style.display=this.checked?'flex':'none'; });
+
+  function loadCams(){
+    api('GET','/api/timelapse/cameras').then(function(list){
+      list=list||[]; var s=$('cam');
+      if(!list.length){ s.innerHTML='<option value="">Nenhuma câmera com gravação</option>'; return; }
+      var byCli={}; list.forEach(function(c){ (byCli[c.cliente_nome||'']=byCli[c.cliente_nome||'']||[]).push(c); });
+      var html='<option value="">Selecione a câmera…</option>';
+      Object.keys(byCli).forEach(function(cli){
+        var opts=byCli[cli].map(function(c){ return '<option value="'+c.id+'">'+esc(c.nome||'Câmera')+'</option>'; }).join('');
+        html += cli ? ('<optgroup label="'+esc(cli)+'">'+opts+'</optgroup>') : opts;
+      });
+      s.innerHTML=html;
+    }).catch(function(e){ if(e.message==='sessao'){ $('cam').innerHTML='<option>Faça login no portal</option>'; } else $('msg').textContent='Erro ao carregar câmeras.'; });
+  }
+  function esc(s){var d=document.createElement('div');d.textContent=(s==null?'':s);return d.innerHTML;}
+
+  function gerar(){
+    var cam=$('cam').value; if(!cam){ msg('Escolha a câmera.'); return; }
+    var body={ camera_id:cam, data_inicio:$('di').value, data_fim:$('df').value, passo_seg:PASSO, fps:FPS,
+               diurno:$('diurno').checked, hora_ini:parseInt($('hi').value,10), hora_fim:parseInt($('hf').value,10) };
+    $('go').disabled=true; msg('');
+    api('POST','/api/timelapse/iniciar',body).then(function(r){
+      JOB=r.job_id; $('form').style.display='none'; $('prog').style.display='block'; $('result').style.display='none';
+      $('pb').style.width='0'; $('pt').innerHTML='<span class="spin"></span>Coletando quadros…'; $('pmsg').textContent='';
+      poll();
+    }).catch(function(e){ $('go').disabled=false; msg(e.message==='sessao'?'Sessão expirada — abra pelo portal.':('Erro: '+e.message),true); });
+  }
+  function poll(){ if(POLL)clearTimeout(POLL);
+    api('GET','/api/timelapse/status?job='+JOB).then(function(s){
+      if(s.status==='running'){
+        var pct = s.total? Math.round(100*s.processed/s.total) : 0;
+        if(s.montando){ $('pt').innerHTML='<span class="spin"></span>Montando o vídeo…'; $('pb').style.width='100%'; }
+        else { $('pt').innerHTML='<span class="spin"></span>Coletando quadros… '+s.processed+(s.total?('/'+s.total):''); $('pb').style.width=pct+'%'; }
+        POLL=setTimeout(poll,1500); return;
+      }
+      if(s.status==='done'){ done(s); return; }
+      if(s.status==='vazio'){ backForm(s.erro||'Sem gravação nesse período.'); return; }
+      backForm(s.erro||'Não foi possível gerar o timelapse.');
+    }).catch(function(e){ backForm(e.message==='sessao'?'Sessão expirada.':('Erro: '+e.message)); });
+  }
+  function done(s){
+    $('prog').style.display='none'; $('result').style.display='block';
+    $('vid').src=s.video_url+'&t='+encodeURIComponent(TOKEN);
+    $('vid').play().catch(function(){});
+    $('rmsg').textContent=(s.frames||0)+' quadros · vídeo pronto (guardado por 24h)';
+    $('dl').onclick=function(){ var a=document.createElement('a'); a.href=s.share_url; a.download='timelapse.mp4'; document.body.appendChild(a); a.click(); a.remove(); };
+    $('share').onclick=function(){ var u=s.share_url; if(navigator.clipboard){ navigator.clipboard.writeText(u).then(function(){ $('rmsg').textContent='Link copiado! (vale 24h)'; }); } else { prompt('Copie o link:', u); } };
+  }
+  function backForm(m){ if(POLL)clearTimeout(POLL); $('prog').style.display='none'; $('form').style.display='block'; $('go').disabled=false; msg(m,true); }
+  function msg(t,err){ var el=$('msg'); el.textContent=t||''; el.className='msg'+(err?' err':''); }
+
+  $('go').addEventListener('click',gerar);
+  $('cancel').addEventListener('click',function(){ if(JOB)api('POST','/api/timelapse/cancelar',{job:JOB}).catch(function(){}); backForm('Cancelado.'); });
+  $('again').addEventListener('click',function(){ $('result').style.display='none'; $('form').style.display='block'; $('vid').src=''; msg(''); });
+
+  if(!TOKEN){ msg('Abra pelo portal (sessão não encontrada).',true); }
+  loadCams();
+})();
+</script>
+</body>
+</html>
