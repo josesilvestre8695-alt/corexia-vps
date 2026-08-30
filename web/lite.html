@@ -211,8 +211,6 @@ button{font-family:inherit;cursor:pointer}
     <div class="fld"><label>Confirmar nova senha</label><input id="pw_c" type="password" autocomplete="new-password"></div>
     <button class="btn" id="pw_btn">Salvar nova senha</button>
     <div id="pw_msg" class="msg" style="padding:12px 0 0"></div>
-    <div class="sechd">Versão</div>
-    <button class="btn ghost" id="btn_classico">← Voltar pra versão clássica</button>
     <div class="sechd">Sessão</div>
     <button class="btn ghost" id="conta_out">Sair da conta</button>
   </div>
@@ -580,7 +578,6 @@ button{font-family:inherit;cursor:pointer}
   $('btn_conta').addEventListener('click',openConta);
   $('conta_x').addEventListener('click',closeConta);
   $('conta_out').addEventListener('click',logout);
-  $('btn_classico').addEventListener('click',function(){ try{ localStorage.setItem('cx_classico','1'); }catch(e){} location.href='/portal'; });
   $('pw_btn').addEventListener('click',changePw);
   $('pf_btn').addEventListener('click',savePref);
   $('ov_x').addEventListener('click',closeOv);
