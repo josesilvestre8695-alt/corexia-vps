@@ -761,6 +761,64 @@ async def prov_equipe_del(uid: str, req: Request):
     return {"success": True}
 
 
+@app.post("/api/prov/clientes/{cid}/criar-acesso")
+async def prov_cliente_criar_acesso(cid: str, req: Request):
+    # cria ou reseta o LOGIN do cliente (role=cliente) + envio opcional por WhatsApp
+    u = current_user(req)
+    if not (u and u["role"] == "provedor" and u.get("provedor_id")):
+        return _forbidden()
+    pid = u["provedor_id"]
+    c = db()
+    row = c.execute("SELECT data FROM entities WHERE entity='Cliente' AND id=?", (cid,)).fetchone()
+    if not row:
+        c.close(); return JSONResponse({"error": "cliente nao encontrado"}, status_code=404)
+    cli = json.loads(row["data"])
+    if cli.get("provedor_id") != pid:
+        c.close(); return _forbidden("cliente de outro provedor")
+    b = await req.json()
+    email = (b.get("email") or cli.get("email") or "").strip().lower()
+    if not email:
+        c.close(); return JSONResponse({"error": "informe um e-mail para o login"}, status_code=400)
+    senha = (b.get("senha") or "").strip()
+    if len(senha) < 4:
+        c.close(); return JSONResponse({"error": "senha minima 4 caracteres"}, status_code=400)
+    nome = cli.get("nome", "") or email
+    ex = c.execute("SELECT id FROM users WHERE cliente_id=? AND role='cliente'", (cid,)).fetchone()
+    reset = False
+    if ex:
+        conf = c.execute("SELECT id FROM users WHERE lower(email)=? AND id<>?", (email, ex["id"])).fetchone()
+        if conf:
+            c.close(); return JSONResponse({"error": "e-mail ja usado por outro login"}, status_code=409)
+        c.execute("UPDATE users SET email=?, password_hash=?, full_name=?, status='ativo', provedor_id=?, cliente_id=? WHERE id=?",
+                  (email, _hash_pw(senha), nome, pid, cid, ex["id"]))
+        uid = ex["id"]; reset = True
+    else:
+        conf = c.execute("SELECT id FROM users WHERE lower(email)=?", (email,)).fetchone()
+        if conf:
+            c.close(); return JSONResponse({"error": "e-mail ja cadastrado em outro login"}, status_code=409)
+        uid = secrets.token_hex(8)
+        c.execute("INSERT INTO users (id,email,password_hash,full_name,role,provedor_id,cliente_id,status,created) "
+                  "VALUES (?,?,?,?,?,?,?,?,?)",
+                  (uid, email, _hash_pw(senha), nome, "cliente", pid, cid, "ativo", _now_iso()))
+    c.commit(); c.close()
+    wa = "nao_enviado"
+    if b.get("enviar_whatsapp"):
+        fone = (cli.get("telefone") or cli.get("whatsapp") or b.get("telefone") or "").strip()
+        if fone:
+            portal = (b.get("portal_url") or "").strip() or "portal.grupoviggia.com.br/novo"
+            txt = ("Ola, " + nome + "! Seu acesso ao portal de monitoramento esta pronto.\n\n"
+                   "Portal: " + portal + "\nLogin: " + email + "\nSenha: " + senha +
+                   "\n\nDica: troque a senha no primeiro acesso.")
+            try:
+                ok = envia_whatsapp(fone, txt, provedor_id=pid)
+                wa = "enviado" if ok else "falhou"
+            except Exception:
+                wa = "falhou"
+        else:
+            wa = "sem_telefone"
+    return {"success": True, "reset": reset, "email": email, "senha": senha, "whatsapp": wa, "user_id": uid}
+
+
 @app.post("/api/demo/criar")
 async def demo_criar(req: Request):
     u = current_user(req)

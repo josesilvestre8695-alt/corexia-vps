@@ -54,6 +54,19 @@ def get_subscription(sub_id, api_key=None):
     return _req("GET", f"/subscriptions/{sub_id}", api_key)
 
 
+def get_payment(payment_id, api_key=None):
+    """READ-ONLY: consulta 1 cobranca pelo id (fallback do webhook)."""
+    return _req("GET", f"/payments/{payment_id}", api_key)
+
+
+def list_subscriptions(customer_id=None, status=None, offset=0, limit=100, api_key=None):
+    """READ-ONLY: assinaturas (filtro opcional por customer/status; paginado)."""
+    params = {"offset": offset, "limit": limit}
+    if customer_id: params["customer"] = customer_id
+    if status:      params["status"] = status
+    return _req("GET", "/subscriptions", api_key, params=params)
+
+
 def list_payments(customer_id=None, subscription_id=None, status=None, api_key=None):
     params = {}
     if customer_id:     params["customer"] = customer_id

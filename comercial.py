@@ -468,6 +468,7 @@ def com_heatmap(req: Request):
 _PROV_ITENS = [
     ("", "Dashboard", "Painel Operacional"),
     ("clientes", "Meus Clientes", "Meus Clientes"),
+    ("migracao", "Importar do Asaas", "Importar Clientes do Asaas"),
     ("propostas", "Propostas", "Propostas"),
     ("planos", "Planos", "Meus Planos"),
     ("faturas", "Cobranca", "Cobranca"),
@@ -934,7 +935,7 @@ _PROV_EMPRESA_BODY = """
  <div class="fld"><label>Nome fantasia (rodape do contrato)</label><input id="e_nf" placeholder="Ex.: VIGGIA SISTEMAS INTELIGENTE"></div>
 </div>
 <div class="grid3">
- <div class="fld"><label>CEP</label><input id="e_cep"></div>
+ <div class="fld"><label>CEP</label><input id="e_cep" onblur="cepEmp()" oninput="cepEmp()"></div>
  <div class="fld"><label>Cidade</label><input id="e_cid"></div>
  <div class="fld"><label>UF</label><input id="e_uf" maxlength="2"></div>
 </div>
@@ -950,6 +951,7 @@ _PROV_EMPRESA_BODY = """
 @media(max-width:560px){.grid2,.grid3{flex-direction:column;gap:0}}</style>
 <script>
 window.PAGE_INIT=load;
+async function cepEmp(){ var el=$('e_cep'); if(!el)return; var cep=(el.value||'').replace(/\D/g,''); if(cep.length!==8)return; if(el._last===cep)return; el._last=cep; try{ var r=await api('GET','/api/comercial/geocode?cep='+cep); if(r.logradouro)$('e_log').value=r.logradouro; if(r.bairro)$('e_bai').value=r.bairro; if(r.cidade)$('e_cid').value=r.cidade; if(r.uf)$('e_uf').value=r.uf; try{$('e_num').focus();}catch(e){} }catch(e){} }
 async function load(){ try{ var d=await api('GET','/api/comercial/prov/empresa'); $('e_rs').value=d.razao_social||''; $('e_cnpj').value=d.document_number||''; $('e_nf').value=d.nome_fantasia||''; $('e_cep').value=d.cep||''; $('e_cid').value=d.cidade||''; $('e_uf').value=d.uf||''; $('e_log').value=d.logradouro||''; $('e_num').value=d.numero||''; $('e_bai').value=d.bairro||''; }catch(e){ msg('Erro: '+e.message); } }
 async function salvar(){ var b={razao_social:$('e_rs').value.trim(),document_number:$('e_cnpj').value.trim(),nome_fantasia:$('e_nf').value.trim(),cep:$('e_cep').value.trim(),cidade:$('e_cid').value.trim(),uf:$('e_uf').value.trim(),logradouro:$('e_log').value.trim(),numero:$('e_num').value.trim(),bairro:$('e_bai').value.trim()};
  if(!b.razao_social||!b.document_number){ msg('Informe razao social e CNPJ.'); return; }
@@ -1017,7 +1019,7 @@ _PROV_PROPOSTAS_BODY = """
   <div class="fld"><label>Telefone</label><input id="p_tel"></div>
  </div>
  <div class="grid3">
-  <div class="fld"><label>CEP</label><input id="p_cep"></div>
+  <div class="fld"><label>CEP</label><input id="p_cep" onblur="cepBusca()" oninput="cepBusca()"></div>
   <div class="fld" style="flex:2"><label>Logradouro</label><input id="p_log"></div>
   <div class="fld"><label>Numero</label><input id="p_num"></div>
  </div>
@@ -1052,6 +1054,7 @@ function render(){ $('rows').innerHTML=PROPS.map(function(p,i){ var st=ST[p.stat
  if((p.status||'aberta')!=='fechada'){ acts='<button class="act" onclick="editar('+i+')">editar</button><button class="act" onclick="enviar('+i+')">enviar codigo</button><button class="act" style="color:var(--ok)" onclick="assinar('+i+')">assinar</button>'+acts; }
  return '<tr><td><b>'+esc(p.cliente_nome||'-')+'</b></td><td>'+dl+': '+esc(fmtDoc(p.document_number)||'-')+'</td><td>'+esc(p.plano_nome||'-')+'</td><td class="money">'+brl(p.valor_mensal)+'</td><td><span class="pill '+st[1]+'">'+st[0]+'</span></td><td style="text-align:right;white-space:nowrap">'+acts+'</td></tr>';
  }).join('')||'<tr><td colspan="6" class="center">Nenhuma proposta ainda. Clique em "Nova proposta".</td></tr>'; }
+async function cepBusca(){ var el=$('p_cep'); if(!el)return; var cep=(el.value||'').replace(/\D/g,''); if(cep.length!==8)return; if(el._last===cep)return; el._last=cep; try{ var d=await api('GET','/api/comercial/util/cep/'+cep); if(d&&!d.erro){ if(d.logradouro)$('p_log').value=d.logradouro; if(d.bairro)$('p_bai').value=d.bairro; if(d.cidade)$('p_cid').value=d.cidade; if(d.uf)$('p_uf').value=d.uf; try{$('p_num').focus();}catch(e){} } }catch(e){} }
 function novo(){ fillPlanos(); $('mt').textContent='Nova proposta'; ['p_id','p_nome','p_doc','p_wa','p_email','p_tel','p_cep','p_log','p_num','p_bai','p_cid','p_uf','p_valor','p_meses','p_cams'].forEach(function(x){$(x).value='';}); $('p_plano').value=''; $('p_dt').value='cnpj'; $('ov').classList.add('open'); }
 function editar(i){ fillPlanos(); var p=PROPS[i]; if(!p)return; $('mt').textContent='Editar proposta'; $('p_id').value=p.id; $('p_nome').value=p.cliente_nome||''; $('p_plano').value=p.plano_id||''; $('p_dt').value=p.document_type||'cnpj'; $('p_doc').value=p.document_number||''; $('p_wa').value=p.whatsapp||''; $('p_email').value=p.email||''; $('p_tel').value=p.telefone||''; $('p_cep').value=p.cep||''; $('p_log').value=p.logradouro||''; $('p_num').value=p.numero||''; $('p_bai').value=p.bairro||''; $('p_cid').value=p.cidade||''; $('p_uf').value=p.uf||''; $('p_valor').value=(p.valor_mensal!=null?p.valor_mensal:''); $('p_meses').value=(p.contrato_meses||''); $('p_cams').value=(p.cameras||''); $('ov').classList.add('open'); }
 function fecha(){ $('ov').classList.remove('open'); }
@@ -1305,6 +1308,269 @@ def prov_ranking(req: Request):
 @router.get("/provedor/ranking")
 def prov_ranking_page(req: Request):
     return _prov_shell("ranking", "Ranking de Clientes", _PROV_RANKING_BODY, req)
+
+
+_PROV_MIGRACAO_BODY = """<style>
+#mig .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:16px}
+#mig h2{margin:0 0 6px;font-size:20px}
+#mig .btn{background:var(--accent);color:#111;border:none;border-radius:10px;padding:9px 16px;font-weight:600;cursor:pointer}
+#mig .btn:disabled{opacity:.5;cursor:not-allowed}
+#mig .muted{color:var(--muted);font-size:13px}
+#mig .msg{margin-top:10px;font-size:13px;min-height:16px}
+#mig .msg.ok{color:var(--ok)} #mig .msg.err{color:var(--bad)}
+#mig .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;background:var(--surface2);color:var(--muted);border:1px solid var(--border)}
+#mig .pill.ok{background:rgba(52,211,153,.15);color:var(--ok);border-color:transparent}
+#mig .pill.warn{background:rgba(249,115,22,.15);color:var(--accent);border-color:transparent}
+#mig .pill.bad{background:rgba(248,113,113,.15);color:var(--bad);border-color:transparent}
+#mig table{width:100%;border-collapse:collapse;font-size:14px}
+#mig th,#mig td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}
+#mig th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+#mig .resrow{padding:6px 0;border-bottom:1px solid var(--border);font-size:14px}
+#mig select{background:var(--surface2);color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:4px 8px}
+</style>
+<div id="mig">
+  <div class="card">
+    <h2>Importar / Migrar Clientes do Asaas</h2>
+    <p class="muted">Vincula clientes que <b>já existem no Asaas</b> (mesma conta) aos clientes já cadastrados aqui, casando por <b>CPF/CNPJ</b>. <b>Não cria cobrança nova</b> — apenas adota a assinatura existente e espelha as faturas. Máximo <b>10 por lote</b>. Quem já está vinculado não aparece (proteção contra cobrança dobrada).</p>
+    <button class="btn" id="btnBuscar" onclick="buscar()">Buscar clientes no Asaas</button>
+    <span id="resumo" class="muted"></span>
+    <div id="msg" class="msg"></div>
+  </div>
+  <div class="card" id="tblwrap" style="display:none">
+    <div style="overflow-x:auto"><table id="tbl"></table></div>
+    <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="btn" id="btnMigrar" onclick="migrar()" disabled>Migrar selecionados</button>
+      <span id="sel" class="muted"></span>
+    </div>
+  </div>
+  <div class="card" id="reswrap" style="display:none">
+    <h2>Resultado do lote</h2>
+    <div id="resbox"></div>
+  </div>
+</div>
+<script>
+window.PAGE_INIT=function(){};
+var CAND=[];
+async function buscar(){
+  var btn=$('btnBuscar'); btn.disabled=true; var old=btn.textContent; btn.textContent='Buscando no Asaas...';
+  try{
+    var d=await api('GET','/api/comercial/prov/migracao/preview'); CAND=d.candidatos||[]; var r=d.resumo||{};
+    $('resumo').textContent=' — '+(d.total_sem_vinculo||0)+' sem vínculo · '+(r.ok||0)+' prontos · '+(r.ambiguo||0)+' ambíguos · '+(r.sem_asaas||0)+' sem Asaas · '+(r.sem_doc||0)+' sem CPF';
+    render(); $('tblwrap').style.display='block';
+  }catch(e){ msg(e.message||'erro ao buscar',false); }
+  btn.disabled=false; btn.textContent=old;
+}
+function render(){
+  var h='<thead><tr><th></th><th>Cliente (aqui)</th><th>CPF/CNPJ</th><th>Valor aqui</th><th>Correspondência no Asaas</th><th>Status</th></tr></thead><tbody>';
+  CAND.forEach(function(x,i){
+    var chk='',match='',badge='';
+    if(x.status==='ok'){ var m=x.matches[0];
+      chk='<input type="checkbox" class="csel" data-i="'+i+'">';
+      match=esc(m.asaas_nome||'')+' · '+(m.asaas_valor!=null?brl(m.asaas_valor):'(sem assinatura)');
+      badge='<span class="pill ok">Pronto</span>';
+    }else if(x.status==='ambiguo'){
+      chk='<input type="checkbox" class="csel" data-i="'+i+'">';
+      var opts=x.matches.map(function(m,j){return '<option value="'+j+'">'+esc(m.asaas_nome||m.asaas_customer_id)+' · '+(m.asaas_valor!=null?brl(m.asaas_valor):'s/assin')+'</option>';}).join('');
+      match='<select class="amb" data-i="'+i+'">'+opts+'</select>';
+      badge='<span class="pill warn">Ambíguo ('+x.matches.length+')</span>';
+    }else if(x.status==='sem_asaas'){ match='<span class="muted">não encontrado no Asaas</span>'; badge='<span class="pill">Sem Asaas</span>';
+    }else if(x.status==='sem_doc'){ match='<span class="muted">cliente sem CPF/CNPJ</span>'; badge='<span class="pill">Sem CPF</span>';
+    }else{ match='<span class="muted">'+esc(x.erro||'erro')+'</span>'; badge='<span class="pill bad">Erro</span>'; }
+    h+='<tr><td>'+chk+'</td><td>'+esc(x.nome)+'</td><td>'+esc(x.documento||'')+'</td><td>'+brl(x.valor_cliente)+'</td><td>'+match+'</td><td>'+badge+'</td></tr>';
+  });
+  h+='</tbody>'; $('tbl').innerHTML=h;
+  var b=document.querySelectorAll('.csel'); for(var k=0;k<b.length;k++){b[k].addEventListener('change',cont);} cont();
+}
+function cont(){ var n=document.querySelectorAll('.csel:checked').length; $('sel').textContent=n+' selecionado(s)'+(n>10?' — máximo 10 por lote!':''); $('btnMigrar').disabled=(n===0||n>10); }
+async function migrar(){
+  var sel=[],b=document.querySelectorAll('.csel:checked');
+  for(var k=0;k<b.length;k++){ var i=parseInt(b[k].getAttribute('data-i')); var x=CAND[i]; var m=x.matches[0];
+    if(x.status==='ambiguo'){ var s=document.querySelector('.amb[data-i="'+i+'"]'); var j=s?parseInt(s.value):0; m=x.matches[j]; }
+    sel.push({cliente_id:x.cliente_id,asaas_customer_id:m.asaas_customer_id,asaas_subscription_id:m.asaas_sub||''});
+  }
+  if(!sel.length)return;
+  if(sel.length>10){ msg('máximo 10 por lote',false); return; }
+  if(!confirm('Vincular '+sel.length+' cliente(s) à assinatura já existente no Asaas e espelhar as faturas? NÃO cria cobrança nova.'))return;
+  var btn=$('btnMigrar'); btn.disabled=true; btn.textContent='Migrando...';
+  try{
+    var d=await api('POST','/api/comercial/prov/migracao/executar',{itens:sel});
+    var rows=(d.resultado||[]).map(function(r){ var nm=(CAND.filter(function(x){return x.cliente_id===r.cliente_id;})[0]||{}).nome||r.cliente_id;
+      var cls=(r.status==='ok')?'ok':((r.status==='pulado')?'':'bad');
+      return '<div class="resrow"><span class="pill '+cls+'">'+esc(r.status)+'</span> '+esc(nm)+' — '+esc(r.msg||'')+'</div>'; }).join('');
+    $('resbox').innerHTML=rows||'<span class="muted">sem retorno</span>'; $('reswrap').style.display='block'; msg('Lote processado.',true); await buscar();
+  }catch(e){ msg(e.message||'erro ao migrar',false); }
+  btn.disabled=false; btn.textContent='Migrar selecionados';
+}
+</script>"""
+
+
+@router.get("/api/comercial/util/cep/{cep}")
+async def util_cep(cep: str, req: Request):
+    """Proxy ViaCEP p/ auto-preenchimento de endereco no form. Requer login."""
+    if not _current_user(req):
+        return JSONResponse({"erro": True, "msg": "nao autenticado"}, status_code=401)
+    d = "".join(ch for ch in str(cep or "") if ch.isdigit())
+    if len(d) != 8:
+        return JSONResponse({"erro": True, "msg": "cep invalido"}, status_code=400)
+    try:
+        import requests as _rq
+        r = _rq.get("https://viacep.com.br/ws/%s/json/" % d, timeout=8)
+        j = r.json()
+    except Exception:
+        return JSONResponse({"erro": True, "msg": "falha ao consultar cep"}, status_code=502)
+    if j.get("erro"):
+        return JSONResponse({"erro": True, "msg": "cep nao encontrado"}, status_code=404)
+    return JSONResponse({"cep": d, "logradouro": j.get("logradouro", ""), "bairro": j.get("bairro", ""),
+                         "cidade": j.get("localidade", ""), "uf": j.get("uf", "")}, status_code=200)
+
+
+@router.get("/provedor/migracao")
+def prov_migracao_page(req: Request):
+    return _prov_shell("migracao", "Importar Clientes do Asaas", _PROV_MIGRACAO_BODY, req)
+
+
+def _mig_digits(s):
+    return "".join(ch for ch in str(s or "") if ch.isdigit())
+
+
+def _mig_key_ctx(req):
+    """(erro_response|None, u, pid, key)"""
+    u = _current_user(req)
+    if not (u and u.get("role") == "provedor"):
+        return JSONResponse({"error": "apenas provedor"}, status_code=403), None, "", None
+    if asaas is None:
+        return JSONResponse({"error": "modulo asaas indisponivel"}, status_code=500), None, "", None
+    pid = (u.get("provedor_id") or "").strip()
+    prov = _get_ent("Provedor", pid) or {}
+    key = _cred(pid).get("asaas_api_key") or None
+    if not key and not prov.get("asaas_conta_grupo"):
+        return JSONResponse({"error": "configure a chave Asaas do provedor antes de importar"}, status_code=400), None, "", None
+    return None, u, pid, key
+
+
+@router.get("/api/comercial/prov/migracao/preview")
+async def prov_migracao_preview(req: Request):
+    err, u, pid, key = _mig_key_ctx(req)
+    if err:
+        return err
+    # clientes do provedor SEM vinculo + set de asaas_customer_id ja usados (guardrail)
+    c = _db()
+    rows = c.execute("SELECT id,data FROM entities WHERE entity='Cliente'").fetchall()
+    c.close()
+    usados = set(); pend = []
+    for r in rows:
+        d = json.loads(r["data"])
+        acu = (d.get("asaas_customer_id") or "").strip()
+        if acu:
+            usados.add(acu)
+        if d.get("provedor_id") == pid and not acu:
+            pend.append((r["id"], d))
+    # puxa customers + subscriptions da conta UMA vez e indexa (rapido; matching local)
+    cust_idx = {}
+    try:
+        off = 0
+        while off < 8000:
+            pg = asaas.list_customers_page(offset=off, limit=100, api_key=key)
+            for cu in pg.get("data", []):
+                dd = _mig_digits(cu.get("cpfCnpj", ""))
+                if dd:
+                    cust_idx.setdefault(dd, []).append(cu)
+            if not pg.get("hasMore"):
+                break
+            off += 100
+    except Exception as e:
+        return JSONResponse({"error": "Asaas (customers): " + str(getattr(e, "body", e))[:160]}, status_code=502)
+    sub_idx = {}
+    try:
+        off = 0
+        while off < 8000:
+            pg = asaas.list_subscriptions(offset=off, limit=100, api_key=key)
+            for s in pg.get("data", []):
+                sub_idx.setdefault(s.get("customer"), []).append(s)
+            if not pg.get("hasMore"):
+                break
+            off += 100
+    except Exception:
+        sub_idx = {}
+    cand = []
+    for cid, d in pend:
+        doc = _mig_digits(d.get("document_number", ""))
+        item = {"cliente_id": cid, "nome": d.get("nome", ""), "documento": d.get("document_number", ""),
+                "valor_cliente": d.get("valor_mensal") or d.get("valor") or 0, "status": "", "matches": []}
+        if not doc:
+            item["status"] = "sem_doc"; cand.append(item); continue
+        hits = [cu for cu in cust_idx.get(doc, []) if (cu.get("id") not in usados)]
+        if not hits:
+            item["status"] = "sem_asaas"; cand.append(item); continue
+        ms = []
+        for cu in hits[:6]:
+            subs = sub_idx.get(cu.get("id"), [])
+            act = [s for s in subs if s.get("status") == "ACTIVE"] or subs
+            ms.append({"asaas_customer_id": cu.get("id"), "asaas_nome": cu.get("name", ""),
+                       "asaas_sub": (act[0].get("id") if act else ""),
+                       "asaas_valor": (act[0].get("value") if act else None)})
+        item["matches"] = ms
+        item["status"] = "ok" if len(ms) == 1 else "ambiguo"
+        cand.append(item)
+    resumo = {"ok": sum(1 for x in cand if x["status"] == "ok"),
+              "ambiguo": sum(1 for x in cand if x["status"] == "ambiguo"),
+              "sem_asaas": sum(1 for x in cand if x["status"] == "sem_asaas"),
+              "sem_doc": sum(1 for x in cand if x["status"] == "sem_doc")}
+    return JSONResponse({"total_sem_vinculo": len(pend), "resumo": resumo, "candidatos": cand}, status_code=200)
+
+
+@router.post("/api/comercial/prov/migracao/executar")
+async def prov_migracao_executar(req: Request):
+    err, u, pid, key = _mig_key_ctx(req)
+    if err:
+        return err
+    try:
+        b = await req.json()
+    except Exception:
+        return JSONResponse({"error": "payload invalido"}, status_code=400)
+    itens = b.get("itens") or []
+    LOTE_MAX = 10; HARD = 25
+    if not itens:
+        return JSONResponse({"error": "nada selecionado"}, status_code=400)
+    if len(itens) > HARD:
+        return JSONResponse({"error": "acima do teto de 25 por vez"}, status_code=400)
+    if len(itens) > LOTE_MAX:
+        return JSONResponse({"error": "maximo %d por lote (recebi %d)" % (LOTE_MAX, len(itens))}, status_code=400)
+    # guardrail: asaas_customer_id ja usados por qualquer cliente
+    c = _db()
+    rows = c.execute("SELECT id,data FROM entities WHERE entity='Cliente'").fetchall()
+    c.close()
+    usados = set()
+    for r in rows:
+        acu = (json.loads(r["data"]).get("asaas_customer_id") or "").strip()
+        if acu:
+            usados.add(acu)
+    res = []
+    for it in itens:
+        cid = (it.get("cliente_id") or "").strip()
+        acu = (it.get("asaas_customer_id") or "").strip()
+        asub = (it.get("asaas_subscription_id") or "").strip()
+        cli = _get_ent("Cliente", cid) if cid else None
+        if not cli or cli.get("provedor_id") != pid:
+            res.append({"cliente_id": cid, "status": "erro", "msg": "cliente fora do escopo"}); continue
+        if (cli.get("asaas_customer_id") or "").strip():
+            res.append({"cliente_id": cid, "status": "pulado", "msg": "ja vinculado"}); continue
+        if not acu:
+            res.append({"cliente_id": cid, "status": "erro", "msg": "sem asaas_customer_id"}); continue
+        if acu in usados:
+            res.append({"cliente_id": cid, "status": "erro", "msg": "customer ja usado por outro cliente"}); continue
+        _update_ent("Cliente", cid, {"asaas_customer_id": acu, "asaas_subscription_id": asub,
+                                     "migrado_asaas": True, "migrado_em": _now_iso(),
+                                     "fonte_migracao": "asaas_import"})
+        usados.add(acu)
+        try:
+            pays = asaas.list_payments(customer_id=acu, api_key=key).get("data", [])
+            for p in pays:
+                _upsert_fatura(p, cli.get("nome", ""), pid)
+            res.append({"cliente_id": cid, "status": "ok", "msg": "%d fatura(s) espelhada(s)" % len(pays)})
+        except Exception as e:
+            res.append({"cliente_id": cid, "status": "vinculado", "msg": "vinculado; sync falhou: " + str(getattr(e, "body", e))[:100]})
+    return JSONResponse({"resultado": res}, status_code=200)
 
 
 def _mtx_ready():
@@ -3412,7 +3678,8 @@ async def prop_assinar(pid: str, req: Request):
     prov = None
     if not nivel1:
         prov = _get_ent("Provedor", u["provedor_id"]) or {}
-        api_key = prov.get("asaas_api_key") or None
+        # prefere a chave da ProvedorCred (onde o painel cadastra); cai p/ Provedor entity; senao corporativa (conta_grupo)
+        api_key = (_cred(u["provedor_id"]).get("asaas_api_key") or prov.get("asaas_api_key")) or None
 
     cid = sid = None; modo = "teste"
     if ASAAS_LIVE:
@@ -3859,6 +4126,91 @@ def _upsert_fatura(p, cliente_nome, provedor_id=None):
         _wallet_maybe_feed(_fatura_id, fdata)
     except Exception:
         pass
+
+
+@router.post("/api/comercial/cron/sync-asaas")
+async def cron_sync_asaas(req: Request):
+    """FALLBACK do webhook Asaas (syncAsaasCharges): reconciliacao periodica das faturas em aberto.
+    Localhost-only (systemd timer corexia-asaas). Protegido por header x-cron-token == COMERCIAL_ASAAS_WEBHOOK_TOKEN.
+    Dormente ate existir alguma chave (corporativa ASAAS_API_KEY ou por-provedor em ProvedorCred).
+    Conservador: em 404 NAO cancela (ambiguo), so registra; so promove status conforme o Asaas."""
+    tok = os.getenv("COMERCIAL_ASAAS_WEBHOOK_TOKEN", "")
+    if not tok:
+        return JSONResponse({"skipped": True, "motivo": "sem COMERCIAL_ASAAS_WEBHOOK_TOKEN"}, status_code=200)
+    if req.headers.get("x-cron-token", "") != tok:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    if asaas is None:
+        return JSONResponse({"skipped": True, "motivo": "modulo asaas indisponivel"}, status_code=200)
+
+    TERMINAIS = {"paga", "cancelada", "estornada"}
+    try:
+        CAP = int(os.getenv("CRON_SYNC_CAP", "300"))
+    except Exception:
+        CAP = 300
+
+    corp_key = bool(os.getenv("ASAAS_API_KEY", ""))
+    prov_keys = {}
+    _c = _db()
+    for r in _c.execute("SELECT id,data FROM entities WHERE entity='ProvedorCred'").fetchall():
+        try:
+            k = (json.loads(r["data"]) or {}).get("asaas_api_key")
+        except Exception:
+            k = None
+        if k:
+            prov_keys[r["id"]] = k
+    abertas = []
+    for r in _c.execute("SELECT id,data FROM entities WHERE entity='Fatura'").fetchall():
+        try:
+            d = json.loads(r["data"])
+        except Exception:
+            continue
+        if d.get("asaas_payment_id") and (d.get("status", "") not in TERMINAIS):
+            abertas.append((r["id"], d))
+    _c.close()
+
+    if not corp_key and not prov_keys:
+        return JSONResponse({"ok": True, "dormente": True, "motivo": "nenhuma chave Asaas configurada",
+                             "provedores_com_chave": 0, "faturas_abertas": len(abertas),
+                             "verificadas": 0, "atualizadas": 0}, status_code=200)
+
+    verificadas = atualizadas = erros = sem_chave = nao_encontradas = 0
+    mudancas = []
+    for fid, d in abertas:
+        if verificadas >= CAP:
+            break
+        pid = d.get("provedor_id", "") or ""
+        key = prov_keys.get(pid)          # chave do provedor (Nivel 2); None => usa a corporativa
+        if not key and not corp_key:
+            sem_chave += 1
+            continue
+        pay_id = d.get("asaas_payment_id")
+        antes = d.get("status", "")
+        try:
+            p = asaas.get_payment(pay_id, key)   # key=None -> chave corporativa (Nivel 1)
+            verificadas += 1
+        except asaas.AsaasError as e:
+            if getattr(e, "status", None) == 404:
+                nao_encontradas += 1          # ambiguo (conta errada ou removida) -> nao mexe no status
+            else:
+                erros += 1
+            continue
+        except Exception:
+            erros += 1
+            continue
+        novo = _ASAAS_ST.get(p.get("status", ""), "pendente")
+        try:
+            _upsert_fatura(p, d.get("cliente_nome", ""), pid or None)
+        except Exception:
+            erros += 1
+            continue
+        if novo != antes:
+            atualizadas += 1
+            mudancas.append({"fatura": fid, "de": antes, "para": novo})
+    return JSONResponse({"ok": True, "provedores_com_chave": len(prov_keys), "corp_key": corp_key,
+                         "faturas_abertas": len(abertas), "verificadas": verificadas,
+                         "atualizadas": atualizadas, "sem_chave": sem_chave,
+                         "nao_encontradas": nao_encontradas, "erros": erros,
+                         "mudancas": mudancas[:50]}, status_code=200)
 
 
 @router.post("/api/comercial/faturas/sync")
@@ -5198,6 +5550,15 @@ _PROV_CLIENTES_BODY = """
  <div class="two"><div class="fld"><label>Cidade</label><input id="c_cidade"></div><div class="fld"><label>UF</label><input id="c_uf" maxlength="2"></div></div>
  <div class="two"><div class="fld"><label>Plano</label><select id="c_plano" onchange="onPlano()"></select></div><div class="fld"><label>Valor mensal (R$)</label><input id="c_valor" type="number" step="0.01"></div></div>
  <div class="foot"><button onclick="fecha()">Cancelar</button><button class="btn-primary" onclick="salvar()">Salvar</button></div></div></div>
+<div class="ov" id="ova"><div class="modal" style="max-width:520px"><h2>Criar / Resetar acesso <span id="a_cli" style="color:var(--muted);font-weight:400;font-size:14px"></span></h2>
+<input type="hidden" id="a_cid">
+<div class="fld"><label>E-mail (login)</label><input id="a_email" type="email"></div>
+<div class="fld"><label>Senha</label><div style="display:flex;gap:8px"><input id="a_senha" style="flex:1"><button class="act" type="button" onclick="genPwAcesso()">gerar</button></div></div>
+<label style="display:flex;gap:8px;align-items:center;margin:10px 0;cursor:pointer;font-size:13px;color:var(--ink)"><input type="checkbox" id="a_wa" style="width:auto" checked> Enviar credenciais por WhatsApp</label>
+<div id="a_msg" class="msg"></div>
+<div id="a_result" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:10px;font-size:13px;margin-bottom:8px;line-height:1.6"></div>
+<div style="text-align:right;margin-top:6px"><button class="act" onclick="fechaAcesso()">fechar</button><button class="btn-primary" onclick="salvarAcesso()">Criar acesso</button></div>
+</div></div>
 <div class="ov" id="ovs"><div class="modal" style="max-width:720px"><h2>Sub-usuarios <span id="s_cli" style="color:var(--muted);font-weight:400;font-size:14px"></span></h2>
  <div id="smsg" class="msg"></div>
  <table><thead><tr><th>Nome</th><th>E-mail</th><th>Unidade</th><th>Cams</th><th>Status</th><th></th></tr></thead><tbody id="srows"><tr><td colspan="6" class="center">carregando...</td></tr></tbody></table>
@@ -5244,9 +5605,28 @@ function render(){ var q=($('q').value||'').toLowerCase();
   var st=bloq?'<span class="pill" style="color:var(--bad)">Bloqueado</span>':'<span class="pill ok">Ativo</span>';
   return '<tr><td><b>'+esc(c.nome||'-')+'</b><div style="color:var(--muted);font-size:12px">'+esc(c.email||'')+'</div></td>'+
    '<td>'+esc(fmtDoc(c.document_number)||'-')+'</td><td>'+esc(c.plano_nome||'-')+'</td><td class="money">'+brl(c.valor_mensal)+'</td><td>'+st+'</td>'+
-   '<td style="text-align:right;white-space:nowrap"><button class="act" onclick="editar(\\''+c.id+'\\')">editar</button>'+'<button class="act" onclick="cams(\\''+c.id+'\\')">cameras</button>'+'<button class="act" onclick="mosaicos(\\''+c.id+'\\')">mosaicos</button>'+'<button class="act" style="color:var(--accent)" onclick="subs(\\''+c.id+'\\')">sub-usuarios</button>'+
+   '<td style="text-align:right;white-space:nowrap"><button class="act" onclick="editar(\\''+c.id+'\\')">editar</button>'+'<button class="act" onclick="cams(\\''+c.id+'\\')">cameras</button>'+'<button class="act" onclick="mosaicos(\\''+c.id+'\\')">mosaicos</button>'+'<button class="act" style="color:var(--accent)" onclick="subs(\\''+c.id+'\\')">sub-usuarios</button>'+'<button class="act" style="color:var(--ok)" onclick="acesso(\\''+c.id+'\\')">acesso</button>'+
    (bloq?'<button class="act" style="color:var(--ok)" onclick="stat(\\''+c.id+'\\',false)">desbloquear</button>':'<button class="act" style="color:var(--bad)" onclick="stat(\\''+c.id+'\\',true)">bloquear</button>')+
    '<button class="act" onclick="excluir(\\''+c.id+'\\')">excluir</button></td></tr>'; }).join('')||'<tr><td colspan="6" class="center">Nenhum cliente. Clique em Novo Cliente.</td></tr>'; }
+function genSenha(){ var s='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'; var o=''; for(var i=0;i<8;i++)o+=s.charAt(Math.floor(Math.random()*s.length)); return o; }
+function genPwAcesso(){ $('a_senha').value=genSenha(); }
+function fechaAcesso(){ $('ova').classList.remove('open'); }
+function acesso(id){ var c=(CLI||[]).filter(function(x){return x.id===id})[0]; if(!c)return;
+  $('a_cid').value=id; $('a_cli').textContent='- '+(c.nome||''); $('a_email').value=c.email||''; $('a_senha').value=genSenha();
+  $('a_wa').checked=!!(c.telefone||c.whatsapp);
+  var m=$('a_msg'); if(m){m.textContent='';m.className='msg';} var r=$('a_result'); if(r){r.style.display='none';r.innerHTML='';}
+  $('ova').classList.add('open'); }
+async function salvarAcesso(){ var id=$('a_cid').value; var email=($('a_email').value||'').trim(); var senha=($('a_senha').value||'').trim();
+  if(!email){ $('a_msg').textContent='Informe o e-mail.'; $('a_msg').className='msg err'; return; }
+  if(senha.length<4){ $('a_msg').textContent='Senha minima 4 caracteres.'; $('a_msg').className='msg err'; return; }
+  var portal=location.origin+'/novo';
+  try{ var d=await api('POST','/api/prov/clientes/'+id+'/criar-acesso',{email:email,senha:senha,enviar_whatsapp:$('a_wa').checked,portal_url:portal});
+    var wa=d.whatsapp, waTxt;
+    if(wa==='enviado')waTxt='&#9989; enviado por WhatsApp'; else if(wa==='sem_telefone')waTxt='&#9888; cliente sem telefone cadastrado'; else if(wa==='nao_enviado')waTxt='(nao enviado por WhatsApp)'; else waTxt='&#9888; falha ao enviar WhatsApp (credenciais abaixo)';
+    var r=$('a_result'); r.style.display='block';
+    r.innerHTML='<b>'+(d.reset?'Senha redefinida':'Acesso criado')+'</b><br>Portal: '+esc(portal)+'<br>Login: '+esc(email)+'<br>Senha: <b>'+esc(senha)+'</b><br>'+waTxt;
+    $('a_msg').textContent=''; $('a_msg').className='msg'; msg('Acesso salvo.',true);
+  }catch(e){ $('a_msg').textContent='Erro: '+e.message; $('a_msg').className='msg err'; } }
 function novo(){ $('mt').textContent='Novo Cliente'; ['c_id','c_nome','c_doc','c_email','c_tel','c_plano','c_valor','c_cep','c_num','c_end','c_bairro','c_compl','c_cidade','c_uf'].forEach(function(i){$(i).value='';}); $('c_dt').value='cnpj'; $('ov').classList.add('open'); }
 function editar(id){ var c=CLI.filter(function(x){return x.id===id})[0]; if(!c)return; $('mt').textContent='Editar Cliente'; $('c_id').value=c.id; $('c_nome').value=c.nome||''; $('c_doc').value=c.document_number||''; $('c_dt').value=c.document_type||'cnpj'; $('c_email').value=c.email||''; $('c_tel').value=c.telefone||''; $('c_plano').value=c.plano_id||''; $('c_valor').value=c.valor_mensal!=null?c.valor_mensal:''; $('c_cep').value=c.cep||''; $('c_num').value=c.numero||''; $('c_end').value=c.endereco||c.logradouro||''; $('c_bairro').value=c.bairro||''; $('c_compl').value=c.complemento||''; $('c_cidade').value=c.cidade||''; $('c_uf').value=c.uf||''; $('ov').classList.add('open'); }
 function fecha(){ $('ov').classList.remove('open'); }
