@@ -82,7 +82,7 @@ TIPO_EMOJI = {"fogo":"🔥","arma_fogo":"🔫","arma_branca":"🔪","placa":"�
 TIPO_LABEL = {"fogo":"FOGO / FUMACA DETECTADO","arma_fogo":"ARMA DE FOGO DETECTADA",
               "arma_branca":"ARMA BRANCA DETECTADA","placa":"PLACA DETECTADA",
               "movimento":"MOVIMENTO DETECTADO","intruso":"INTRUSO DETECTADO",
-              "aglomeracao":"AGLOMERACAO DETECTADA","outro":"ALERTA DE SEGURANCA"}
+              "aglomeracao":"AGLOMERACAO DETECTADA","toca_ninja":"ROSTO COBERTO (TOCA NINJA)","capacete":"CAPACETE / MOTO","queda":"POSSIVEL QUEDA (PESSOA CAIDA)","outro":"ALERTA DE SEGURANCA"}
 
 
 def db():
@@ -107,7 +107,7 @@ def init_db():
         id TEXT PRIMARY KEY, email TEXT UNIQUE, password_hash TEXT, full_name TEXT,
         role TEXT, provedor_id TEXT, cliente_id TEXT, status TEXT DEFAULT 'ativo',
         created TEXT)""")
-    for _col, _typ in (("menu_perms", "TEXT"), ("equipe", "INTEGER DEFAULT 0")):
+    for _col, _typ in (("menu_perms", "TEXT"), ("equipe", "INTEGER DEFAULT 0"), ("twofa_method", "TEXT"), ("twofa_secret", "TEXT"), ("twofa_enabled", "INTEGER DEFAULT 0")):
         try:
             c.execute("ALTER TABLE users ADD COLUMN %s %s" % (_col, _typ))
         except sqlite3.OperationalError:
@@ -335,12 +335,264 @@ async def api_login(req: Request):
         c.close()
         return JSONResponse({"error": "usuario bloqueado"}, status_code=403)
     _login_fails.pop(ip, None)                # sucesso zera o contador do IP
+    _tfc = _twofa_maybe_challenge(r, b)       # 2FA so p/ quem ativou (fail-safe: nunca tranca)
+    if _tfc is not None:
+        c.close(); return _tfc
     t = secrets.token_hex(24)
     c.execute("INSERT INTO sessions (token,user_id,created) VALUES (?,?,?)", (t, r["id"], _now_iso()))
     corte = (datetime.now() - timedelta(days=SESSION_DAYS)).strftime("%Y-%m-%dT%H:%M:%S")
     c.execute("DELETE FROM sessions WHERE created < ?", (corte,))   # higiene: limpa sessoes expiradas
     c.commit(); c.close()
+    _new_access_check(r, b, req)
     return {"token": t, "user": _user_public(r)}
+
+# ==================== 2FA (WhatsApp OTP / TOTP / trusted device) ====================
+TWOFA_ON  = os.getenv("TWOFA_ON", "1") not in ("0", "false", "False", "")
+TRUST_DAYS = int(os.getenv("TRUST_DAYS", "30"))
+_2fa_pending = {}   # tmp -> {uid, method, code, exp}
+_2fa_enroll  = {}   # uid -> {code, exp}  (codigo de ativacao WA)
+
+# ---- alerta de novo acesso (device desconhecido) ----
+NEWACCESS_ON = os.getenv("NEWACCESS_ON", "1") not in ("0", "false", "False", "")
+try:
+    _cdb = db()
+    _cdb.execute("CREATE TABLE IF NOT EXISTS known_devices (user_id INTEGER, did TEXT, first_seen TEXT, last_seen TEXT, ua TEXT, ip TEXT)")
+    _cdb.execute("CREATE INDEX IF NOT EXISTS idx_known_dev ON known_devices(user_id, did)")
+    _cdb.commit(); _cdb.close()
+except Exception as _e:
+    print("[newaccess] tabela:", _e)
+
+
+def _did_hash(did):
+    return hmac.new(_2fa_key(), (did or "").encode(), hashlib.sha256).hexdigest()
+
+
+def _new_access_check(r, b, req):
+    """Grava o device do login; 1o device = baseline (sem alerta); device novo depois -> WhatsApp."""
+    if not NEWACCESS_ON:
+        return
+    try:
+        did = (b.get("did") or "").strip()
+        if not did:
+            return
+        dh = _did_hash(did)
+        ip = req.client.host if req.client else "?"
+        ua = (req.headers.get("user-agent") or "")[:180]
+        c = db()
+        row = c.execute("SELECT rowid FROM known_devices WHERE user_id=? AND did=?", (r["id"], dh)).fetchone()
+        if row:
+            c.execute("UPDATE known_devices SET last_seen=?, ip=? WHERE rowid=?", (_now_iso(), ip, row[0]))
+            c.commit(); c.close()
+            return
+        cnt = c.execute("SELECT COUNT(*) FROM known_devices WHERE user_id=?", (r["id"],)).fetchone()[0]
+        c.execute("INSERT INTO known_devices (user_id,did,first_seen,last_seen,ua,ip) VALUES (?,?,?,?,?,?)",
+                  (r["id"], dh, _now_iso(), _now_iso(), ua, ip))
+        c.commit(); c.close()
+        if cnt <= 0:
+            return  # primeiro device conhecido = baseline, nao alerta
+        fone = _2fa_phone(r)
+        if not fone:
+            return
+        quando = datetime.now().strftime("%d/%m/%Y %H:%M")
+        msg = ("Corexia: NOVO ACESSO detectado na sua conta.\n"
+               "Data: " + quando + "\n"
+               "IP: " + str(ip) + "\n\n"
+               "Se NAO foi voce, troque sua senha agora e avise o suporte.")
+        try:
+            envia_whatsapp(fone, msg, provedor_id=(r["provedor_id"] if ("provedor_id" in r.keys()) else None))
+        except Exception as _e2:
+            print("[newaccess] wa:", _e2)
+    except Exception as _e:
+        print("[newaccess]", _e)
+
+
+def _2fa_key():
+    v = _media_secret()
+    return v.encode() if isinstance(v, str) else v
+
+def _2fa_gen_otp():
+    return "%06d" % secrets.randbelow(1000000)
+
+def _mask_phone(f):
+    f = "".join(ch for ch in str(f or "") if ch.isdigit())
+    return ("***" + f[-4:]) if len(f) >= 4 else "***"
+
+def _2fa_phone(r):
+    try:
+        if r["cliente_id"]:
+            cli = _get_entity("Cliente", r["cliente_id"]) or {}
+            return (cli.get("telefone") or cli.get("whatsapp") or cli.get("celular") or "").strip()
+        if r["provedor_id"]:
+            pr = _get_entity("Provedor", r["provedor_id"]) or {}
+            return (pr.get("telefone") or pr.get("whatsapp") or (pr.get("empresa") or {}).get("telefone") or "").strip()
+    except Exception:
+        pass
+    return ""
+
+def _totp_b32secret():
+    return base64.b32encode(secrets.token_bytes(20)).decode().rstrip("=")
+
+def _totp_code(secret_b32, ts=None):
+    import struct as _st
+    key = base64.b32decode(secret_b32 + "=" * (-len(secret_b32) % 8), casefold=True)
+    ctr = int((ts if ts is not None else time.time()) // 30)
+    h = hmac.new(key, _st.pack(">Q", ctr), hashlib.sha1).digest()
+    o = h[19] & 0x0f
+    n = (_st.unpack(">I", h[o:o + 4])[0] & 0x7fffffff) % 1000000
+    return "%06d" % n
+
+def _totp_verify(secret_b32, code):
+    code = (code or "").strip()
+    if not (secret_b32 and code):
+        return False
+    now = time.time()
+    for w in (-1, 0, 1):
+        if _totp_code(secret_b32, now + w * 30) == code:
+            return True
+    return False
+
+def _trust_sign(uid, dev, exp):
+    return hmac.new(_2fa_key(), ("trust|%s|%s|%s" % (uid, dev, exp)).encode(), hashlib.sha256).hexdigest()[:32]
+
+def _trust_new(uid):
+    dev = secrets.token_hex(8); exp = int(time.time()) + TRUST_DAYS * 86400
+    return "%s.%d.%s" % (dev, exp, _trust_sign(uid, dev, exp))
+
+def _trust_valid(uid, tok):
+    try:
+        dev, exp, sig = (tok or "").split(".", 2); exp = int(exp)
+        if exp < time.time():
+            return False
+        return hmac.compare_digest(sig, _trust_sign(uid, dev, exp))
+    except Exception:
+        return False
+
+def _twofa_maybe_challenge(r, b):
+    """Retorna JSONResponse de desafio se o user tem 2FA ativo; senao None (segue login normal).
+    FAIL-SAFE: qualquer duvida (sem telefone/secret, kill-switch off) -> None (nao tranca)."""
+    if not TWOFA_ON:
+        return None
+    try:
+        method = (r["twofa_method"] or "") if r["twofa_enabled"] else ""
+    except Exception:
+        method = ""
+    if not method:
+        return None
+    tk = (b.get("trust") or "").strip()
+    if tk and _trust_valid(r["id"], tk):
+        return None
+    tmp = secrets.token_hex(16); ent = {"uid": r["id"], "method": method, "exp": time.time() + 300}
+    dest = ""
+    if method == "wa":
+        fone = _2fa_phone(r)
+        if not fone:
+            return None   # sem telefone -> nao tranca
+        ent["code"] = _2fa_gen_otp(); dest = _mask_phone(fone)
+        try:
+            envia_whatsapp(fone, "Corexia: seu codigo de acesso e " + ent["code"] + " (expira em 5 min). Nao compartilhe com ninguem.", provedor_id=(r["provedor_id"] or None))
+        except Exception as _e:
+            print("[2fa] envio wa:", str(_e)[:100])
+    elif method == "totp":
+        if not (r["twofa_secret"] or ""):
+            return None   # sem secret -> nao tranca
+    else:
+        return None
+    _2fa_pending[tmp] = ent
+    return JSONResponse({"twofa_required": True, "tmp": tmp, "method": method, "dest": dest}, status_code=200)
+
+
+@app.post("/api/auth/login/verify")
+async def api_login_verify(req: Request):
+    b = await req.json()
+    tmp = (b.get("tmp") or "").strip(); code = (b.get("code") or "").strip()
+    ent = _2fa_pending.get(tmp)
+    if not ent or ent["exp"] < time.time():
+        _2fa_pending.pop(tmp, None)
+        return JSONResponse({"error": "desafio expirado — faca login de novo"}, status_code=400)
+    c = db(); r = c.execute("SELECT * FROM users WHERE id=?", (ent["uid"],)).fetchone()
+    if not r or r["status"] != "ativo":
+        c.close(); _2fa_pending.pop(tmp, None); return JSONResponse({"error": "usuario indisponivel"}, status_code=403)
+    ok = (code == ent.get("code")) if ent["method"] == "wa" else _totp_verify(r["twofa_secret"], code)
+    if not ok:
+        c.close(); return JSONResponse({"error": "codigo invalido"}, status_code=401)
+    _2fa_pending.pop(tmp, None)
+    t = secrets.token_hex(24)
+    c.execute("INSERT INTO sessions (token,user_id,created) VALUES (?,?,?)", (t, r["id"], _now_iso()))
+    corte = (datetime.now() - timedelta(days=SESSION_DAYS)).strftime("%Y-%m-%dT%H:%M:%S")
+    c.execute("DELETE FROM sessions WHERE created < ?", (corte,)); c.commit(); c.close()
+    _new_access_check(r, b, req)
+    out = {"token": t, "user": _user_public(r)}
+    if b.get("remember"):
+        out["trust"] = _trust_new(r["id"])
+    return out
+
+
+@app.get("/api/auth/2fa/status")
+async def api_2fa_status(req: Request):
+    u = current_user(req)
+    if not u:
+        return _unauth()
+    c = db(); r = c.execute("SELECT twofa_enabled, twofa_method, cliente_id, provedor_id FROM users WHERE id=?", (u["id"],)).fetchone(); c.close()
+    if not r:
+        return {"enabled": False, "method": "", "phone_mask": ""}
+    fone = _2fa_phone(r)
+    return {"enabled": bool(r["twofa_enabled"]), "method": (r["twofa_method"] or ""),
+            "phone_mask": (_mask_phone(fone) if fone else "")}
+
+
+@app.post("/api/auth/2fa/start")
+async def api_2fa_start(req: Request):
+    u = current_user(req)
+    if not u:
+        return _unauth()
+    b = await req.json(); method = (b.get("method") or "wa").strip()
+    if method == "totp":
+        sec = _totp_b32secret()
+        c = db(); c.execute("UPDATE users SET twofa_secret=? WHERE id=?", (sec, u["id"])); c.commit(); c.close()
+        uri = "otpauth://totp/Corexia:%s?secret=%s&issuer=Corexia&digits=6&period=30" % (u.get("email", ""), sec)
+        return {"method": "totp", "secret": sec, "uri": uri}
+    fone = _2fa_phone(u)
+    if not fone:
+        return JSONResponse({"error": "sem telefone no cadastro p/ receber o codigo"}, status_code=400)
+    code = _2fa_gen_otp(); _2fa_enroll[u["id"]] = {"code": code, "exp": time.time() + 600}
+    try:
+        envia_whatsapp(fone, "Corexia: codigo para ATIVAR o 2FA: " + code + " (expira em 10 min).", provedor_id=(u.get("provedor_id") or None))
+    except Exception as _e:
+        return JSONResponse({"error": "falha ao enviar WhatsApp: " + str(_e)[:80]}, status_code=502)
+    return {"method": "wa", "dest": _mask_phone(fone)}
+
+
+@app.post("/api/auth/2fa/confirm")
+async def api_2fa_confirm(req: Request):
+    u = current_user(req)
+    if not u:
+        return _unauth()
+    b = await req.json(); method = (b.get("method") or "wa").strip(); code = (b.get("code") or "").strip()
+    if method == "totp":
+        c = db(); r = c.execute("SELECT twofa_secret FROM users WHERE id=?", (u["id"],)).fetchone(); c.close()
+        if not (r and _totp_verify(r["twofa_secret"], code)):
+            return JSONResponse({"error": "codigo invalido"}, status_code=401)
+    else:
+        en = _2fa_enroll.get(u["id"])
+        if not en or en["exp"] < time.time() or code != en.get("code"):
+            return JSONResponse({"error": "codigo invalido ou expirado"}, status_code=401)
+        _2fa_enroll.pop(u["id"], None)
+    c = db(); c.execute("UPDATE users SET twofa_method=?, twofa_enabled=1 WHERE id=?", (method, u["id"])); c.commit(); c.close()
+    return {"success": True, "method": method}
+
+
+@app.post("/api/auth/2fa/disable")
+async def api_2fa_disable(req: Request):
+    u = current_user(req)
+    if not u:
+        return _unauth()
+    b = await req.json(); pw = b.get("password") or ""
+    c = db(); r = c.execute("SELECT password_hash FROM users WHERE id=?", (u["id"],)).fetchone()
+    if not (r and _check_pw(pw, r["password_hash"])):
+        c.close(); return JSONResponse({"error": "senha invalida"}, status_code=401)
+    c.execute("UPDATE users SET twofa_enabled=0, twofa_secret=NULL WHERE id=?", (u["id"],)); c.commit(); c.close()
+    return {"success": True}
+
 
 @app.get("/api/auth/me")
 async def api_me(req: Request):
@@ -1535,7 +1787,9 @@ async def webhook(req: Request):
         try:
             _cam_id_ev = b.get("camera_id", "") or cam.get("id", "")
             if _cam_id_ev:
-                _clip_ocorrido = _alerta_clip_url(_cam_id_ev, int(time.time()))
+                _ev = int(b.get("epoch") or 0); _nowep = int(time.time())
+                _ev = _ev if (_ev and abs(_ev - _nowep) <= 120) else _nowep  # usa epoch do evento; se relogio fora, cai p/ agora
+                _clip_ocorrido = _alerta_clip_url(_cam_id_ev, _ev)
         except Exception as _e:
             print("[clip-ocorrido] erro:", _e)
         caption = (f"{emoji} *COREXIA SEGURANCA - {label}*\n\n"
@@ -3792,15 +4046,17 @@ _PORTAL_MENU_JS = r"""<script>/* corexia-portal-menu */(function(){
  function mkItem(id,ref,txt,icon,onclick){ var a=ref.cloneNode(true); a.id=id; a.removeAttribute('href'); a.style.cursor='pointer'; a.classList.remove('active'); relabel(a,txt); if(icon)seticon(a,icon); a.addEventListener('click',onclick,true); return a; }
  var MOS_ICON='<rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect>';
  var BUSCA_ICON='<circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>';
+ var SEG_ICON='<rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path>';
  function goMos(e){ if(e){e.preventDefault();e.stopPropagation();} window.location.href='/meus-mosaicos?t='+encodeURIComponent(t); }
  function goBusca(e){ if(e){e.preventDefault();e.stopPropagation();} window.location.assign('/portal/busca'); }
  function goFat(e){ if(e){e.preventDefault();e.stopPropagation();} window.location.assign('/portal/faturas'); }
+ function goSeg(e){ if(e){e.preventDefault();e.stopPropagation();} window.location.assign('/portal/seguranca'); }
  function killFab(id){ var x=document.getElementById(id); if(x&&x.parentNode)x.parentNode.removeChild(x); }
  function fab(id,txt,onclick,bottom){ if(document.getElementById(id))return; var b=document.createElement('button'); b.id=id; b.type='button'; b.textContent=txt;
    b.style.cssText='position:fixed;right:14px;bottom:'+(bottom||16)+'px;z-index:99999;background:#f97316;color:#111;font-weight:700;font-family:system-ui,sans-serif;font-size:14px;padding:11px 16px;border:0;border-radius:24px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.35)';
    b.addEventListener('click',onclick); document.body.appendChild(b); }
  function isMobile(){ return (window.innerWidth||999) <= 860; }
- function killItems(){ ['cx-mos-item','cx-busca-item'].forEach(function(id){ var e=document.getElementById(id); if(e&&e.parentNode)e.parentNode.removeChild(e); }); }
+ function killItems(){ ['cx-mos-item','cx-busca-item','cx-seg-item'].forEach(function(id){ var e=document.getElementById(id); if(e&&e.parentNode)e.parentNode.removeChild(e); }); }
  function mkbtn(txt,onclick,primary){ var b=document.createElement('button'); b.type='button'; b.textContent=txt;
    b.style.cssText='display:block;white-space:nowrap;font-weight:700;font-family:system-ui,sans-serif;font-size:14px;padding:11px 18px;border-radius:24px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.30);'+(primary?'background:#f97316;color:#111;border:0':'background:#fff7ed;color:#7c2d12;border:1px solid #fdba74');
    b.addEventListener('click',onclick); return b; }
@@ -3815,7 +4071,7 @@ _PORTAL_MENU_JS = r"""<script>/* corexia-portal-menu */(function(){
    function close(){ open=false; render(); }
    function toggle(){ open=!open; render(); }
    function nav(fn){ return function(e){ if(e){e.preventDefault();e.stopPropagation();} close(); fn(e); }; }
-   if(IS_CLI) panel.appendChild(mkbtn('💳 Faturas',nav(goFat),false));
+   if(IS_CLI) panel.appendChild(mkbtn('💳 Faturas',nav(goFat),false)); if(IS_CLI) panel.appendChild(mkbtn('🔒 Seguranca',nav(goSeg),false));
    if(IS_CLI) panel.appendChild(mkbtn('▦ Mosaico',nav(goMos),false));
    panel.appendChild(mkbtn('🔍 Pergunte',nav(goBusca),false));
    var tog=mkbtn('☰ Menu',function(e){ if(e){e.preventDefault();e.stopPropagation();} toggle(); },true); tog.id='cx-menu-toggle';
@@ -3845,6 +4101,7 @@ _PORTAL_MENU_JS = r"""<script>/* corexia-portal-menu */(function(){
      var b=mkItem('cx-busca-item',busAnchor,'Pergunte ao Corexia',BUSCA_ICON,goBusca);
      busAnchor.parentNode.insertBefore(b, busAnchor.nextSibling);
    }
+   if(IS_CLI){ var segAnchor=document.getElementById('cx-busca-item')||busAnchor; if(!document.getElementById('cx-seg-item')){ var sg=mkItem('cx-seg-item',segAnchor,'Seguranca',SEG_ICON,goSeg); segAnchor.parentNode.insertBefore(sg, segAnchor.nextSibling); } }
  }
  var pend=false; function sched(){ if(pend)return; pend=true; setTimeout(function(){pend=false; ensure();},140); }
  function start(){ ensure(); try{ new MutationObserver(sched).observe(document.body||document.documentElement,{childList:true,subtree:true}); }catch(e){} window.addEventListener('popstate',sched); window.addEventListener('resize',sched); }
@@ -4609,6 +4866,47 @@ _PERF_JS = r"""<script>/* corexia-perf */
   window.MutationObserver=W;
 })();</script>"""
 
+_TWOFA_LOGIN_JS = r"""<script>/* corexia-2fa-login */
+(function(){
+  if(window.__cx2fa) return; window.__cx2fa=true;
+  var OF=window.fetch;
+  function cxDid(){ try{ var d=localStorage.getItem('corexia_did'); if(!d){ d=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():('d'+Date.now()+Math.random().toString(36).slice(2)); localStorage.setItem('corexia_did',d); } return d; }catch(e){ return ''; } }
+  function isLogin(u,o){ try{ return (''+u).indexOf('/api/auth/login')>=0 && (''+u).indexOf('/verify')<0 && o && (''+(o.method||'')).toUpperCase()==='POST'; }catch(e){ return false; } }
+  function overlay(j){ return new Promise(function(resolve){
+    var ov=document.createElement('div');
+    ov.style.cssText='position:fixed;inset:0;z-index:2147483600;background:rgba(3,5,8,.72);display:flex;align-items:center;justify-content:center;padding:16px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif';
+    var dest=j.dest?(' ('+j.dest+')'):''; var isWa=(j.method==='wa');
+    var sub=isWa?('Enviamos um codigo de 6 digitos no seu WhatsApp'+dest+'.'):'Digite o codigo do seu app autenticador.';
+    ov.innerHTML='<div style="background:#12151b;color:#f2f4f6;border:1px solid #2a323d;border-radius:16px;max-width:380px;width:100%;padding:22px 20px;box-shadow:0 20px 70px rgba(0,0,0,.6)">'
+     +'<div style="font-size:17px;font-weight:700;margin-bottom:6px">Verificacao em 2 passos</div>'
+     +'<div style="font-size:13px;color:#8b96a6;margin-bottom:14px">'+sub+'</div>'
+     +'<input id="cx2c" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" style="width:100%;box-sizing:border-box;text-align:center;letter-spacing:8px;font-size:26px;background:#1c2129;border:1px solid #2a323d;border-radius:10px;color:#fff;padding:12px">'
+     +'<label style="display:flex;gap:8px;align-items:center;margin:12px 0;font-size:13px;color:#c9d2dc;cursor:pointer"><input type="checkbox" id="cx2r" checked style="width:auto"> Lembrar este dispositivo por 30 dias</label>'
+     +'<div id="cx2e" style="color:#f87171;font-size:13px;min-height:16px;margin-bottom:8px"></div>'
+     +'<div style="display:flex;gap:8px;justify-content:flex-end"><button id="cx2x" style="background:none;border:1px solid #2a323d;color:#8b96a6;border-radius:10px;padding:10px 14px;cursor:pointer">Cancelar</button><button id="cx2ok" style="background:#f97316;color:#1a1205;border:none;border-radius:10px;padding:10px 18px;font-weight:700;cursor:pointer">Confirmar</button></div></div>';
+    document.body.appendChild(ov);
+    var inp=ov.querySelector('#cx2c'); setTimeout(function(){try{inp.focus();}catch(e){}},60);
+    function done(r){ try{ov.remove();}catch(e){} resolve(r); }
+    function err(m){ ov.querySelector('#cx2e').textContent=m||'codigo invalido'; }
+    ov.querySelector('#cx2x').onclick=function(){ done(new Response(JSON.stringify({error:'2FA cancelado'}),{status:401,headers:{'Content-Type':'application/json'}})); };
+    function submit(){ var code=(inp.value||'').replace(/\D/g,''); if(code.length<6){err('digite os 6 digitos');return;}
+      var rem=ov.querySelector('#cx2r').checked;
+      OF('/api/auth/login/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tmp:j.tmp,code:code,remember:rem,did:cxDid()})})
+       .then(function(r){ return r.json().then(function(d){ return {ok:r.ok,d:d}; }); })
+       .then(function(x){ if(x.ok && x.d && x.d.token){ if(rem && x.d.trust){ try{localStorage.setItem('corexia_trust',x.d.trust);}catch(e){} } done(new Response(JSON.stringify({token:x.d.token,user:x.d.user}),{status:200,headers:{'Content-Type':'application/json'}})); } else { err((x.d&&x.d.error)||'codigo invalido'); } })
+       .catch(function(){ err('erro de conexao'); }); }
+    ov.querySelector('#cx2ok').onclick=submit;
+    inp.addEventListener('keydown',function(e){ if(e.key==='Enter')submit(); });
+  }); }
+  window.fetch=function(url,opts){
+    if(!isLogin(url,opts)) return OF.apply(this,arguments);
+    try{ var bd=JSON.parse((opts&&opts.body)||'{}'); bd.did=cxDid(); var tr=localStorage.getItem('corexia_trust'); if(tr){ bd.trust=tr; } opts.body=JSON.stringify(bd); }catch(e){}
+    return OF(url,opts).then(function(resp){
+      return resp.clone().json().then(function(j){ if(j && j.twofa_required){ return overlay(j); } return resp; }).catch(function(){ return resp; });
+    });
+  };
+})();</script>"""
+
 _PORTAL_VIDEO_JS = r"""<script>/* corexia-vid */
 (function(){
   if(window.__cxVid) return; window.__cxVid=true;
@@ -4810,6 +5108,8 @@ def spa(full_path: str, request: Request):
                 print("[wl] head:", _we)
             # injeta ponte comercial + white-label client no <body> (index.html em disco intacto)
             _inj = ""
+            if "corexia-2fa-login" not in _html:
+                _inj += _TWOFA_LOGIN_JS
             if "corexia-perf" not in _html:
                 _inj += _PERF_JS
             if _COM_BRIDGE and "corexia-bridge" not in _html:

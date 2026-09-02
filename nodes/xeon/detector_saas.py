@@ -252,19 +252,20 @@ def gemini_confirma(jpg, nome, tipo, jpg_crop=None):
 
 
 def gemini_balaclava(crop_jpg, nome):
-    """True se a pessoa esta com o ROSTO COBERTO (balaclava/touca ninja/capacete integral).
-    Fail-closed: sem Gemini / erro / circuito aberto -> False (nao alerta, evita falso alarme)."""
+    """Classifica o que cobre o rosto/cabeca: 'balaclava' (touca ninja), 'capacete' (moto) ou 'nenhum'.
+    Fail-closed: sem Gemini / erro / circuito aberto -> ('nenhum','') (nao alerta, evita falso alarme)."""
     if not USE_GEMINI or not GEMINI_KEY or not crop_jpg:
-        return False, ""
+        return "nenhum", ""
     global _gem_fails, _gem_open_until, _gem_down
     if _gem_open_until and time.time() < _gem_open_until:
-        return False, ""
+        return "nenhum", ""
     prompt = ('Camera de seguranca "' + str(nome) + '". A imagem e o RECORTE da cabeca/rosto de uma pessoa. '
-              'A pessoa esta com o ROSTO COBERTO para ocultar a identidade — balaclava (touca ninja), '
-              'mascara de esqui, capuz com mascara, ou CAPACETE INTEGRAL fechado? '
-              'NAO conte como coberto: oculos/oculos escuros, boné/chapeu simples, mascara cirurgica comum, '
-              'capuz sem mascara, ou rosto normal visivel. Responda true SOMENTE se a maior parte do rosto '
-              'estiver OCULTA de forma proposital. Responda SO JSON: {"coberto": true/false, "descricao": "1 frase"}')
+              'Classifique o que cobre o rosto/cabeca em UMA categoria: '
+              '"balaclava" = touca ninja, mascara de esqui, pano ou capuz cobrindo o rosto para OCULTAR a identidade (tipico de assalto a pe). '
+              '"capacete" = CAPACETE DE MOTO / motociclista (casco rigido, com viseira), incluindo capacete integral fechado. '
+              '"nenhum" = rosto visivel, oculos ou oculos escuros, bone ou chapeu, mascara cirurgica comum, ou capuz SEM mascara. '
+              'IMPORTANTE: diferencie bem CAPACETE DE MOTO (casco rigido, viseira) de BALACLAVA (tecido macio) — nao confunda. '
+              'Responda SO JSON: {"tipo": "balaclava|capacete|nenhum", "descricao": "1 frase"}')
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_KEY}"
     try:
         r = requests.post(url, timeout=20, json={
@@ -275,7 +276,41 @@ def gemini_balaclava(crop_jpg, nome):
             raise RuntimeError("429")
         d = json.loads(r.json()["candidates"][0]["content"]["parts"][0]["text"])
         _gem_fails = 0; _gem_open_until = 0.0; _gem_down = False
-        return bool(d.get("coberto")), d.get("descricao", "rosto coberto")
+        tipo = str(d.get("tipo", "nenhum")).strip().lower()
+        if tipo not in ("balaclava", "capacete"):
+            tipo = "nenhum"
+        return tipo, d.get("descricao", "")
+    except Exception as e:
+        _gem_fails += 1
+        if ("429" in str(e)) or _gem_fails >= GEMINI_CB_FAILS:
+            _gem_open_until = time.time() + GEMINI_CB_COOLDOWN; _gem_down = True
+        return "nenhum", ""
+
+
+def gemini_queda(crop_jpg, nome, still_secs=0):
+    # True se ha pessoa CAIDA no chao / desmaiada / imovel sugerindo queda ou mal subito. Fail-closed.
+    if not USE_GEMINI or not GEMINI_KEY or not crop_jpg:
+        return False, ""
+    global _gem_fails, _gem_open_until, _gem_down
+    if _gem_open_until and time.time() < _gem_open_until:
+        return False, ""
+    prompt = ('Camera de seguranca "' + str(nome) + '". A imagem e o RECORTE de uma pessoa que esta ha ~' + str(int(still_secs)) +
+              's DEITADA e IMOVEL. Ela parece ter CAIDO / desmaiado / passado mal e estar no CHAO precisando de ajuda? '
+              'Responda false se for situacao NORMAL: pessoa sentada/agachada, deitada em CAMA/SOFA/REDE/espreguicadeira, '
+              'fazendo exercicio/alongamento no chao, tomando sol, nadando, ou trabalhando deitada. '
+              'Responda true SOMENTE se parecer uma pessoa desamparada no chao (queda/mal subito). '
+              'Responda SO JSON: {"caida": true/false, "descricao": "1 frase"}')
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_KEY}"
+    try:
+        r = requests.post(url, timeout=20, json={
+            "contents": [{"parts": [{"text": prompt},
+                          {"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(crop_jpg).decode()}}]}],
+            "generationConfig": {"response_mime_type": "application/json", "temperature": 0}})
+        if r.status_code == 429:
+            raise RuntimeError("429")
+        d = json.loads(r.json()["candidates"][0]["content"]["parts"][0]["text"])
+        _gem_fails = 0; _gem_open_until = 0.0; _gem_down = False
+        return bool(d.get("caida")), d.get("descricao", "possivel pessoa caida")
     except Exception as e:
         _gem_fails += 1
         if ("429" in str(e)) or _gem_fails >= GEMINI_CB_FAILS:
@@ -336,6 +371,7 @@ def envia_alerta(cam, tipo, conf, desc, imagem_b64=None, verificado=True):
         "descricao": f"[IA] {desc}",
         "confianca": int(conf * 100),
         "verificado": verificado,   # item 1: False = quarentena (grava sem WhatsApp/push)
+        "epoch": int(time.time()),   # epoch do evento p/ o video do ocorrido do webhook
     }
     if imagem_b64:
         payload["imagem_base64"] = imagem_b64   # frame com a caixa vermelha (Opcao A)
@@ -395,7 +431,9 @@ _CFG_ALIASES = {
     "linha":       ("linha", "linha_virtual"),
     "heatmap":     ("heatmap", "mapa_calor"),
     "toca_ninja":  ("toca_ninja", "balaclava", "capacete_ninja"),
+    "capacete":    ("capacete", "moto", "moto_capacete", "capacete_moto"),
     "piscina":     ("piscina", "afogamento"),
+    "queda":       ("queda", "pessoa_caida", "caido"),
 }
 
 # vocabulario da tela -> model_id(s) necessarios (carga/execucao ON-DEMAND por camera)
@@ -410,7 +448,9 @@ _VOCAB_MODEL = {
     "intruso": (MODEL_ID_GENERAL,), "linha": (MODEL_ID_GENERAL,),  # zona/linha usam COCO (pessoa)
     "heatmap": (MODEL_ID_GENERAL,),  # mapa de calor usa COCO (pessoa)
     "toca_ninja": (MODEL_ID_GENERAL,),  # balaclava usa COCO (pessoa) + Gemini
+    "capacete": (MODEL_ID_GENERAL,),  # capacete/moto: COCO (pessoa) + Gemini (classifica capacete vs balaclava)
     "piscina": (MODEL_ID_GENERAL,),  # afogamento usa COCO (pessoa) + Gemini
+    "queda": (MODEL_ID_GENERAL,),  # pessoa caida/queda: COCO (pessoa) + Gemini
     "facial": (MODEL_ID_GENERAL,),  # controle de acesso: COCO so p/ a camera ser processada; recon = YuNet+SFace em _facial_check
     "guarda_piscina": (MODEL_ID_GENERAL,),  # guarda-piscina: COCO (pessoa/animal) na agua quando ARMADO
     "suspeito": (MODEL_ID_GENERAL,),  # detector de suspeitos: COCO (pessoa) -> merodeio/permanencia
@@ -467,11 +507,17 @@ def _analiticos_ativos_cam(cam, now_ts):
     iso = lt.tm_wday + 1                 # 1=seg..7=dom
     dias_hoje = {iso, iso % 7}           # cobre convencao ISO (1=seg) e JS (dom=0)
     hhmm = "%02d:%02d" % (lt.tm_hour, lt.tm_min)
+    # UNIAO (agenda por analitico): base 24h (analiticos_padrao) + TODAS as janelas que casam agora
+    ativos = set(cfg.get("analiticos_padrao") or [])
     for h in (cfg.get("horarios") or []):
-        if dias_hoje & set(h.get("dias") or []):
-            if (h.get("hora_inicio") or "00:00") <= hhmm <= (h.get("hora_fim") or "23:59"):
-                return set(h.get("analiticos") or [])
-    return set(cfg.get("analiticos_padrao") or [])
+        if not (dias_hoje & set(h.get("dias") or [])):
+            continue
+        ini = h.get("hora_inicio") or "00:00"
+        fim = h.get("hora_fim") or "23:59"
+        dentro = (ini <= hhmm <= fim) if ini <= fim else (hhmm >= ini or hhmm <= fim)  # suporta cruzar meia-noite
+        if dentro:
+            ativos |= set(h.get("analiticos") or [])
+    return ativos
 
 
 def _tipo_ativo_na_cam(cam, tipo, now_ts):
@@ -627,7 +673,11 @@ BALA_COOLDOWN  = int(os.getenv("BALA_COOLDOWN", "120"))   # cooldown do alerta/c
 
 
 def _balaclava_check(cam, predictions, frame_bgr, now):
-    if frame_bgr is None or not _tipo_ativo_na_cam(cam, "toca_ninja", now):
+    if frame_bgr is None:
+        return
+    toca_on = _tipo_ativo_na_cam(cam, "toca_ninja", now)
+    cap_on = _tipo_ativo_na_cam(cam, "capacete", now)
+    if not (toca_on or cap_on):
         return
     cid = cam.get("id")
     if now - _bala_check.get(cid, 0) < BALA_CHECK_SEC:   # throttle p/ nao gastar Gemini
@@ -648,12 +698,19 @@ def _balaclava_check(cam, predictions, frame_bgr, now):
         ok, buf = cv2.imencode(".jpg", frame_bgr[y1:y2, x1:x2])
         if not ok:
             return
-        coberto, desc = gemini_balaclava(buf.tobytes(), cam.get("nome", ""))
+        tipo, desc = gemini_balaclava(buf.tobytes(), cam.get("nome", ""))
     except Exception as e:
         print("[bala] erro:", e); return
-    if not coberto or (now - _bala_ultimo.get(cid, 0) < BALA_COOLDOWN):
+    # roteia: balaclava -> toca_ninja ; capacete -> capacete (moto). Capacete NUNCA dispara toca_ninja.
+    if tipo == "balaclava" and toca_on:
+        alerta_tipo = "toca_ninja"; texto = "Pessoa com rosto coberto (touca ninja): " + (desc or "")
+    elif tipo == "capacete" and cap_on:
+        alerta_tipo = "capacete"; texto = "Pessoa de capacete / motociclista: " + (desc or "")
+    else:
         return
-    _bala_ultimo[cid] = now
+    if now - _bala_ultimo.get((cid, alerta_tipo), 0) < BALA_COOLDOWN:
+        return
+    _bala_ultimo[(cid, alerta_tipo)] = now
     img_b64 = None
     try:
         an = frame_bgr.copy()
@@ -663,9 +720,8 @@ def _balaclava_check(cam, predictions, frame_bgr, now):
             img_b64 = base64.b64encode(bufA.tobytes()).decode()
     except Exception:
         pass
-    print(f"[bala] {cam.get('nome','')}: rosto coberto - {desc}")
-    envia_alerta(cam, "toca_ninja", float(p.get("confidence", 0.9)),
-                 "Pessoa com rosto coberto (touca ninja/capacete): " + (desc or ""), img_b64, verificado=True)
+    print(f"[bala] {cam.get('nome','')}: {tipo} - {desc}")
+    envia_alerta(cam, alerta_tipo, float(p.get("confidence", 0.9)), texto, img_b64, verificado=True)
 
 
 # ---------- PISCINA / AFOGAMENTO (AUXILIO): pessoa na agua imovel + Gemini na zona da agua ----------
@@ -1223,6 +1279,102 @@ def _susp_check(cam, predictions, frame_bgr, now):
         print("[suspeito-dbg] %s | area=%s | pessoas=%d | tracks=%d %s" % (cam.get("nome", ""), "zona" if area else "frame", len(persons), len(_susp_tracks[cid]), _td))
 
 
+# ---------- PESSOA CAIDA / QUEDA (auxilio): pessoa deitada e imovel ~15-20s -> Gemini confirma ----------
+_queda = {}          # cid -> {"since":ts,"centroid":(fx,fy),"last_check":ts}
+_queda_ultimo = {}   # cid -> ts do ultimo alerta
+_queda_dbg = {}
+QUEDA_DEBUG = os.getenv("QUEDA_DEBUG", "0") not in ("0", "false", "False", "")
+QUEDA_RATIO     = float(os.getenv("QUEDA_RATIO", "1.15").replace(",", "."))    # bbox mais LARGO que alto (w/h) = deitado
+QUEDA_STILL     = int(os.getenv("QUEDA_STILL", "18"))                          # imovel+deitado por Xs antes de confirmar (conservador)
+QUEDA_CHECK_SEC = int(os.getenv("QUEDA_CHECK_SEC", "15"))                      # intervalo min entre chamadas ao Gemini/cam
+QUEDA_COOLDOWN  = int(os.getenv("QUEDA_COOLDOWN", "180"))                      # cooldown do alerta/cam
+QUEDA_MOVE_TOL  = float(os.getenv("QUEDA_MOVE_TOL", "0.06").replace(",", "."))  # movimento (frac) que reinicia o cronometro
+QUEDA_MIN_H     = float(os.getenv("QUEDA_MIN_H", "0.12").replace(",", "."))     # altura min do bbox (frac) p/ ignorar ruido distante
+
+
+def _queda_check(cam, predictions, frame_bgr, now):
+    if frame_bgr is None or not _tipo_ativo_na_cam(cam, "queda", now):
+        return
+    preds = predictions.get("predictions", []) if isinstance(predictions, dict) else []
+    H, W = frame_bgr.shape[:2]
+    lying = []
+    for (fx, fy, p) in _person_pts(preds, W, H):
+        w = float(p.get("width", 0)); h = float(p.get("height", 0))
+        if h <= 0 or (h / (H or 1)) < QUEDA_MIN_H:
+            continue
+        if (w / h) >= QUEDA_RATIO:   # deitado: largura >= altura*ratio (pessoa em pe tem h >> w)
+            lying.append((fx, fy, p))
+    cid = cam.get("id"); st = _queda.get(cid) or {}
+    if QUEDA_DEBUG and (now - _queda_dbg.get(cid, 0) >= 3):
+        _queda_dbg[cid] = now
+        _mr = 0.0
+        for (_a, _b, _pp) in _person_pts(preds, W, H):
+            _hh = float(_pp.get("height", 0)) or 1
+            _mr = max(_mr, float(_pp.get("width", 0)) / _hh)
+        print("[queda-dbg] %s: pessoas=%d deitadas=%d maxratio=%.2f (deitado>=%.2f) still=%ds" % (
+            cam.get("nome", ""), len(_person_pts(preds, W, H)), len(lying), _mr, QUEDA_RATIO,
+            int(now - (st.get("since") or now)) if st.get("since") else 0))
+    GAP = float(os.getenv("QUEDA_GAP", "5").replace(",", "."))        # tolera flicker: gap sem "deitado" ate Xs NAO zera o cronometro
+    JUMP = float(os.getenv("QUEDA_JUMP", "0.25").replace(",", "."))    # centroide pulou muito = outra pessoa/local -> reinicia episodio
+    MINH = int(os.getenv("QUEDA_MIN_HITS", "4"))                       # min de frames "deitado" no episodio antes de confirmar
+    p = None
+    if lying:
+        fx, fy, p = max(lying, key=lambda t: float(t[2].get("width", 0)) * float(t[2].get("height", 0)))
+        cx, cy = fx, fy
+        if st.get("since") and (now - float(st.get("last_lying", 0))) <= GAP:
+            oc = st.get("centroid") or (cx, cy)
+            jump = ((cx - oc[0]) ** 2 + (cy - oc[1]) ** 2) ** 0.5
+            if jump <= JUMP:
+                since = st["since"]; hits = int(st.get("hits", 0)) + 1
+            else:
+                since = now; hits = 1
+        else:
+            since = now; hits = 1
+        _queda[cid] = {"since": since, "centroid": (cx, cy), "last_lying": now, "hits": hits, "last_check": st.get("last_check", 0)}
+    else:
+        if st.get("since") and (now - float(st.get("last_lying", 0))) <= GAP:
+            _queda[cid] = st                        # gap curto de "deitado": mantem o episodio vivo (nao zera)
+        else:
+            _queda[cid] = {"since": 0, "centroid": None, "last_lying": 0, "hits": 0, "last_check": st.get("last_check", 0)}
+        return                                      # sem "deitado" neste frame -> espera um frame com deitado p/ confirmar
+    st2 = _queda[cid]
+    still = now - float(st2["since"])
+    if still < QUEDA_STILL or int(st2.get("hits", 0)) < MINH:   # conservador: imovel/deitado ~18s + N deteccoes
+        return
+    if now - float(st2.get("last_check", 0)) < QUEDA_CHECK_SEC:
+        return
+    _queda[cid]["last_check"] = now
+    crop = _crop_person(frame_bgr, p, W, H)
+    if crop is None:
+        return
+    try:
+        ok, buf = cv2.imencode(".jpg", crop)
+        if not ok:
+            return
+        caida, desc = gemini_queda(buf.tobytes(), cam.get("nome", ""), int(still))
+    except Exception as e:
+        print("[queda] erro:", e); return
+    if QUEDA_DEBUG:
+        print("[queda-dbg] %s: GEMINI caida=%s (still=%ds) - %s" % (cam.get("nome", ""), caida, int(still), desc))
+    if not caida or (now - _queda_ultimo.get(cid, 0) < QUEDA_COOLDOWN):
+        return
+    _queda_ultimo[cid] = now
+    img_b64 = None
+    try:
+        x = float(p.get("x", 0)); y = float(p.get("y", 0)); w = float(p.get("width", 0)); h = float(p.get("height", 0))
+        an = frame_bgr.copy()
+        cv2.rectangle(an, (int(x - w / 2), int(y - h / 2)), (int(x + w / 2), int(y + h / 2)), (0, 0, 255), 3)
+        cv2.putText(an, "PESSOA CAIDA?", (int(max(0, x - w / 2)), int(max(24, y - h / 2 - 8))),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+        okA, bufA = cv2.imencode(".jpg", an)
+        if okA:
+            img_b64 = base64.b64encode(bufA.tobytes()).decode()
+    except Exception:
+        pass
+    print("[queda] %s: pessoa caida (imovel %ds) - %s" % (cam.get("nome", ""), int(still), desc))
+    envia_alerta(cam, "queda", 0.9, "PESSOA CAIDA (auxilio): " + (desc or "pessoa no chao imovel, possivel queda"), img_b64, verificado=True)
+
+
 def _piscina_check(cam, predictions, frame_bgr, now):
     if frame_bgr is None or not _tipo_ativo_na_cam(cam, "piscina", now):
         return
@@ -1434,6 +1586,11 @@ def _process(predictions, video_frame):
         _balaclava_check(cam, predictions, video_frame.image, time.time())
     except Exception as e:
         print("[bala] erro:", e)
+    # PESSOA CAIDA / QUEDA (auxilio): pessoa deitada imovel ~15-20s + Gemini confirma
+    try:
+        _queda_check(cam, predictions, video_frame.image, time.time())
+    except Exception as e:
+        print("[queda] erro:", e)
     # PISCINA/AFOGAMENTO (auxilio): pessoa imovel na agua + Gemini na zona
     try:
         _piscina_check(cam, predictions, video_frame.image, time.time())
