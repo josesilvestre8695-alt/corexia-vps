@@ -63,6 +63,7 @@ def _zapi_send(numero, texto, inst=None, tok=None, cli=None):
 COMERCIAL_ITENS = [
     ("propostas",       "Propostas",         "Propostas Comerciais",  ("admin", "provedor")),
     ("proposta-lp",     "Proposta Personalizada", "Proposta Personalizada", ("admin",)),
+    ("visitas",         "Visitas",           "Visitas",               ("admin",)),
     ("planos",          "Planos",            "Gerenciar Planos",      ("admin",)),
     ("clientes",        "Provedor/Revenda",  "Provedor/Revenda",      ("admin",)),
     ("analiticos",      "Controle de IA (Global)", "Controle de IA (Global)", ("admin",)),
@@ -76,6 +77,7 @@ COMERCIAL_ITENS = [
     ("vendedores",      "Vendedores",        "Vendedores",            ("admin", "provedor")),
     ("comissionamento", "Comissionamento",   "Comissionamento",       ("admin", "provedor")),
     ("contas-pagar",    "Contas a Pagar",    "Contas a Pagar",        ("admin", "provedor")),
+    ("seguranca",       "Seguranca (2FA)",   "Seguranca (2FA)",       ("admin",)),
 ]
 _LABEL_BY_SLUG = {s: lbl for s, lbl, _t, _r in COMERCIAL_ITENS}
 
@@ -424,6 +426,244 @@ def com_clientes(req: Request):
 
 
 _REACT_SIDEBAR_CSS = '.rside{width:266px;padding:0;overflow-y:auto}.rlogo{display:flex;flex-direction:column;align-items:center;gap:7px;padding:20px 20px 16px;border-bottom:1px solid var(--border)}.rlogo img{width:40px;height:40px;object-fit:contain}.rlogo b{font-weight:800;font-size:17px;letter-spacing:3px;color:var(--ink)}.rsec{color:var(--muted);font-size:10.5px;font-family:var(--mono);letter-spacing:.13em;text-transform:uppercase;padding:16px 20px 6px}.rit{display:flex;align-items:center;gap:11px;color:var(--muted);text-decoration:none;padding:9px 20px;font-size:13.5px;border-left:3px solid transparent;transition:background .14s,color .14s,border-color .14s}.rit svg{width:18px;height:18px;flex:none}.rit:hover{background:var(--surface2);color:var(--ink)}.rit.active{background:linear-gradient(90deg,rgba(249,115,22,.9),rgba(249,115,22,.55));border-left-color:#fff;color:#1a1205;font-weight:700;border-radius:0 10px 10px 0;margin-right:10px}.ruser{margin-top:auto;display:flex;align-items:center;gap:10px;padding:13px 14px;border-top:1px solid var(--border)}.ravatar{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#f97316,#ea580c);color:#1a1205;display:flex;align-items:center;justify-content:center;font-weight:800;flex:none;box-shadow:0 2px 8px rgba(249,115,22,.3)}.ruinfo{display:flex;flex-direction:column;min-width:0;flex:1;line-height:1.35}.runame{display:flex;align-items:center;gap:6px}.runame b{font-size:13px;color:var(--ink)}.rbadge{font-size:9px;font-weight:700;letter-spacing:.05em;color:var(--accent);border:1px solid rgba(249,115,22,.5);border-radius:5px;padding:1px 5px}.ruinfo span{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rlogout{color:var(--muted);text-decoration:none;font-size:17px;padding:5px 7px;border-radius:8px}.rlogout:hover{color:var(--bad);background:var(--surface2)}.rtop{display:flex;align-items:center;gap:10px}.ricon{width:38px;height:38px;border-radius:50%;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);cursor:pointer}.ricon svg{width:18px;height:18px}.rdot{position:absolute;top:9px;right:10px;width:7px;height:7px;border-radius:50%;background:var(--accent)}.top{background:var(--bg) !important}'
+# ==================== VISITAS (admin Corexia -> apresentacao do plano de negocio) ====================
+def _visita_end_str(v):
+    log = (v.get("logradouro") or "").strip(); num = (v.get("numero") or "").strip()
+    bai = (v.get("bairro") or "").strip(); cid = (v.get("cidade") or "").strip(); uf = (v.get("uf") or "").strip()
+    parts = []
+    l1 = log + ((", " + num) if num else "")
+    if l1.strip(): parts.append(l1)
+    if bai: parts.append(bai)
+    cu = cid + (("/" + uf) if uf else "")
+    if cu: parts.append(cu)
+    return " - ".join(parts) or "(endereco a confirmar)"
+
+
+def _visita_data_br(v):
+    d = (v.get("data") or ""); p = d.split("-")
+    return (p[2] + "/" + p[1] + "/" + p[0]) if len(p) == 3 else d
+
+
+def _msg_visita(v, quem, quando):
+    nome = v.get("nome", ""); data = _visita_data_br(v); hora = v.get("hora", "")
+    end = _visita_end_str(v); wpp = v.get("whatsapp", ""); link = (v.get("link_local") or "").strip() or "(nao informado)"
+    if quem == "cliente" and quando == "marcacao":
+        return ("Olá, *" + nome + "*! 👋\n"
+                "Aqui é da *Corexia*. Sua visita para *apresentação do plano de negócio Corexia* foi agendada com sucesso! ✅\n\n"
+                "📅 *Data:* " + data + "\n⏰ *Horário:* " + hora + "\n📍 *Local:* " + end + "\n\n"
+                "Agradecemos de coração pela oportunidade de mostrar como a Corexia pode transformar o seu negócio. 🚀\n"
+                "No dia da visita você vai receber um *lembrete* por aqui.\n\n"
+                "Qualquer imprevisto, é só nos avisar. Até breve! 🤝")
+    if quem == "cliente" and quando == "lembrete":
+        return ("Olá, *" + nome + "*! 😊\n"
+                "Passando para lembrar que *hoje* é o dia da nossa visita para apresentar o *plano de negócio Corexia*.\n\n"
+                "📅 *Hoje* — " + data + "\n⏰ *Horário:* " + hora + "\n📍 *Local:* " + end + "\n\n"
+                "Estamos ansiosos para te conhecer e apresentar tudo! Até logo. 🚀")
+    if quem == "vendedor" and quando == "marcacao":
+        return ("📋 *Nova visita agendada — Corexia*\n\n"
+                "Você foi designado para uma visita de apresentação do plano de negócio.\n\n"
+                "👤 *Cliente:* " + nome + "\n📱 *WhatsApp:* " + wpp + "\n📅 *Data:* " + data + "\n"
+                "⏰ *Horário:* " + hora + "\n📍 *Endereço:* " + end + "\n🗺️ *Localização:* " + link + "\n\n"
+                "Prepare-se para o atendimento. Bom trabalho! 💪")
+    return ("⏰ *Lembrete: visita HOJE — Corexia*\n\n"
+            "👤 *Cliente:* " + nome + "\n📱 *WhatsApp:* " + wpp + "\n⏰ *Horário:* " + hora + "\n"
+            "📍 *Endereço:* " + end + "\n🗺️ *Localização:* " + link + "\n\n"
+            "Não esqueça! Bom atendimento. 🚀")
+
+
+def _visita_vendedores(v):
+    out = []
+    for vid in (v.get("vendedor_ids") or []):
+        vd = _get_ent("Vendedor", vid)
+        if vd:
+            out.append({"nome": vd.get("nome", ""), "telefone": (vd.get("telefone") or "").strip()})
+    return out
+
+
+def _visita_enviar(v, quando):
+    res = {"cliente": False, "vendedores": []}
+    try:
+        ok, _i = _zapi_send(v.get("whatsapp", ""), _msg_visita(v, "cliente", quando)); res["cliente"] = bool(ok)
+    except Exception:
+        res["cliente"] = False
+    vmsg = _msg_visita(v, "vendedor", quando)
+    for vend in _visita_vendedores(v):
+        if not vend["telefone"]:
+            res["vendedores"].append({"nome": vend["nome"], "ok": False}); continue
+        try:
+            ok, _i = _zapi_send(vend["telefone"], vmsg); res["vendedores"].append({"nome": vend["nome"], "ok": bool(ok)})
+        except Exception:
+            res["vendedores"].append({"nome": vend["nome"], "ok": False})
+    return res
+
+
+@router.get("/api/comercial/visitas")
+def visitas_listar(req: Request):
+    u = _current_user(req)
+    if not u or u.get("role") != "admin":
+        return JSONResponse({"error": "sem permissao"}, status_code=403)
+    c = _db(); rows = c.execute("SELECT id,data FROM entities WHERE entity='Visita'").fetchall(); c.close()
+    out = [dict(json.loads(r["data"]), id=r["id"]) for r in rows]
+    out = [x for x in out if not x.get("provedor_id")]
+    out.sort(key=lambda x: (x.get("data", ""), x.get("hora", "")), reverse=True)
+    return out
+
+
+@router.get("/api/comercial/visitas/vendedores")
+def visitas_vendedores(req: Request):
+    u = _current_user(req)
+    if not u or u.get("role") != "admin":
+        return JSONResponse({"error": "sem permissao"}, status_code=403)
+    c = _db(); rows = c.execute("SELECT id,data FROM entities WHERE entity='Vendedor'").fetchall(); c.close()
+    out = []
+    for r in rows:
+        d = json.loads(r["data"])
+        if d.get("provedor_id") or (d.get("status") or "ativo") != "ativo":
+            continue
+        out.append({"id": r["id"], "nome": d.get("nome", ""), "telefone": (d.get("telefone") or "").strip()})
+    out.sort(key=lambda x: x["nome"].lower())
+    return out
+
+
+@router.post("/api/comercial/visitas/salvar")
+async def visitas_salvar(req: Request):
+    u = _current_user(req)
+    if not u or u.get("role") != "admin":
+        return JSONResponse({"error": "sem permissao"}, status_code=403)
+    b = await req.json()
+    nome = (b.get("nome") or "").strip()
+    wpp = "".join(ch for ch in (b.get("whatsapp") or "") if ch.isdigit())
+    if not nome:
+        return JSONResponse({"error": "Informe o nome do cliente"}, status_code=400)
+    if len(wpp) != 13:
+        return JSONResponse({"error": "WhatsApp deve ter 13 digitos (55 + DDD + numero)"}, status_code=400)
+    if not (b.get("data") and b.get("hora")):
+        return JSONResponse({"error": "Informe data e hora da visita"}, status_code=400)
+    vids = [x for x in (b.get("vendedor_ids") or []) if x]
+    vnomes = []
+    for vid in vids:
+        vd = _get_ent("Vendedor", vid)
+        if vd: vnomes.append(vd.get("nome", ""))
+    data = {"nome": nome, "whatsapp": wpp, "cep": (b.get("cep") or "").strip(),
+            "logradouro": (b.get("logradouro") or "").strip(), "numero": (b.get("numero") or "").strip(),
+            "bairro": (b.get("bairro") or "").strip(), "cidade": (b.get("cidade") or "").strip(),
+            "uf": (b.get("uf") or "").strip(), "link_local": (b.get("link_local") or "").strip(),
+            "data": (b.get("data") or "").strip(), "hora": (b.get("hora") or "").strip(),
+            "vendedor_ids": vids, "vendedores_nomes": vnomes,
+            "status": "agendada", "provedor_id": ""}
+    eid = (b.get("id") or "").strip(); novo = not eid
+    if eid:
+        ex = _get_ent("Visita", eid)
+        if not ex or ex.get("provedor_id"):
+            return JSONResponse({"error": "visita nao encontrada"}, status_code=404)
+        data["criado_em"] = ex.get("criado_em") or _now_iso()
+        data["lembrete_enviado"] = ex.get("lembrete_enviado", False)
+        _update_ent("Visita", eid, data)
+    else:
+        data["criado_em"] = _now_iso(); data["lembrete_enviado"] = False
+        eid = _create_ent("Visita", data)
+    envio = _visita_enviar(dict(data, id=eid), "marcacao") if novo else None
+    return {"ok": True, "id": eid, "envio": envio}
+
+
+@router.post("/api/comercial/visitas/{vid}/reenviar")
+async def visitas_reenviar(vid: str, req: Request):
+    u = _current_user(req)
+    if not u or u.get("role") != "admin":
+        return JSONResponse({"error": "sem permissao"}, status_code=403)
+    v = _get_ent("Visita", vid)
+    if not v or v.get("provedor_id"):
+        return JSONResponse({"error": "visita nao encontrada"}, status_code=404)
+    return {"ok": True, "envio": _visita_enviar(dict(v, id=vid), "marcacao")}
+
+
+@router.delete("/api/comercial/visitas/{vid}")
+def visitas_excluir(vid: str, req: Request):
+    u = _current_user(req)
+    if not u or u.get("role") != "admin":
+        return JSONResponse({"error": "sem permissao"}, status_code=403)
+    v = _get_ent("Visita", vid)
+    if not v or v.get("provedor_id"):
+        return JSONResponse({"error": "visita nao encontrada"}, status_code=404)
+    c = _db(); c.execute("DELETE FROM entities WHERE entity='Visita' AND id=?", (vid,)); c.commit(); c.close()
+    return {"ok": True}
+
+
+@router.get("/comercial/visitas")
+def com_visitas(req: Request):
+    return _shell("visitas", "Visitas", _VISITAS_BODY)
+
+
+_VISITAS_BODY = """
+<div style="display:flex;gap:12px;align-items:center;margin-bottom:16px"><div style="flex:1"></div>
+ <button class="btn-primary" onclick="nova()">+ Nova Visita</button></div>
+<div id="msg" class="msg"></div>
+<div class="cards">
+ <div class="kpi"><div class="k">Agendadas (futuras)</div><div class="v" id="k_ag" style="color:var(--accent)">-</div></div>
+ <div class="kpi"><div class="k">Proxima</div><div class="v" id="k_prox" style="font-size:15px">-</div></div>
+ <div class="kpi"><div class="k">Total</div><div class="v" id="k_tot">-</div></div></div>
+<table><thead><tr><th>Cliente</th><th>WhatsApp</th><th>Data / Hora</th><th>Endereco</th><th>Vendedor(es)</th><th></th></tr></thead>
+<tbody id="rows"><tr><td colspan="6" class="center">carregando...</td></tr></tbody></table>
+
+<div class="ov" id="ov"><div class="modal" style="max-width:680px"><h2 id="mt">Nova Visita</h2><input type="hidden" id="v_id">
+ <div class="fld"><label>Nome do cliente *</label><input id="v_nome" placeholder="Nome / empresa do prospect"></div>
+ <div class="fld"><label>WhatsApp * (13 digitos: 55 + DDD + numero)</label><input id="v_wpp" inputmode="numeric" maxlength="13" placeholder="5581999999999" oninput="soDig(this)"><div id="wppst" style="font-size:12px;margin-top:3px;color:var(--muted)"></div></div>
+ <div style="color:var(--accent);font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;margin:12px 0 8px">Endereco</div>
+ <div class="two"><div class="fld"><label>CEP</label><input id="v_cep" onblur="cep()" placeholder="so numeros"></div><div class="fld"><label>Cidade</label><input id="v_cid" oninput="autolink()"></div></div>
+ <div class="two"><div class="fld"><label>Logradouro</label><input id="v_log" oninput="autolink()"></div><div class="fld"><label>Numero</label><input id="v_num" oninput="autolink()"></div></div>
+ <div class="two"><div class="fld"><label>Bairro</label><input id="v_bai" oninput="autolink()"></div><div class="fld"><label>UF</label><input id="v_uf" maxlength="2"></div></div>
+ <div class="fld"><label>Link da localizacao (Google Maps)</label><input id="v_link" placeholder="https://maps.google.com/..."><div style="font-size:12px;color:var(--muted);margin-top:3px">Preenche sozinho pelo endereco; cole o pin exato se quiser.</div></div>
+ <div style="color:var(--accent);font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;margin:12px 0 8px">Data e hora da visita</div>
+ <div class="two"><div class="fld"><label>Data *</label><input id="v_data" type="date"></div><div class="fld"><label>Hora *</label><input id="v_hora" type="time"></div></div>
+ <div style="color:var(--accent);font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;margin:12px 0 8px">Vendedor(es) que recebem o WhatsApp</div>
+ <div id="v_vends" style="display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:9px;padding:10px">carregando...</div>
+ <div class="foot"><button onclick="fecha()">Cancelar</button><button class="btn-primary" onclick="salvar()">Salvar e avisar por WhatsApp</button></div></div></div>
+<script>
+var VIS=[], VENDS=[]; window.PAGE_INIT=init;
+function soDig(el){ el.value=(el.value||'').replace(/[^0-9]/g,'').slice(0,13); var n=el.value.length; var st=$('wppst');
+ if(n===13){ st.textContent='OK — 13 digitos'; st.style.color='var(--ok)'; } else { st.textContent=n+'/13 digitos'; st.style.color='var(--bad)'; } }
+async function init(){ try{ VENDS=await api('GET','/api/comercial/visitas/vendedores'); }catch(e){ VENDS=[]; } load(); }
+async function cep(){ var c=($('v_cep').value||'').replace(/[^0-9]/g,''); if(c.length!==8)return; try{ var r=await api('GET','/api/comercial/geocode?cep='+c);
+ if(r.logradouro)$('v_log').value=r.logradouro; if(r.bairro)$('v_bai').value=r.bairro; if(r.cidade)$('v_cid').value=r.cidade; if(r.uf)$('v_uf').value=r.uf; autolink(); try{$('v_num').focus();}catch(e){} }catch(e){} }
+function autolink(){ var l=$('v_link'); if(l.value && l._auto!==l.value) return;
+ var q=[$('v_log').value,$('v_num').value,$('v_bai').value,$('v_cid').value,$('v_uf').value].filter(function(x){return (x||'').trim();}).join(', ');
+ if(q){ var url='https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(q); l.value=url; l._auto=url; } }
+function vendsBox(sel){ sel=sel||{}; $('v_vends').innerHTML = VENDS.length ? VENDS.map(function(v){ return '<label style="display:flex;gap:7px;align-items:center;font-size:13px;color:var(--ink)"><input type="checkbox" value="'+v.id+'"'+(sel[v.id]?' checked':'')+' style="width:auto"> '+esc(v.nome)+(v.telefone?'':' <span style="color:var(--bad)">(sem tel)</span>')+'</label>'; }).join('') : '<span style="color:var(--muted)">Nenhum vendedor Corexia cadastrado. Cadastre em Vendedores (aba do admin).</span>'; }
+function selVends(){ return Array.prototype.slice.call(document.querySelectorAll('#v_vends input:checked')).map(function(e){return e.value;}); }
+function nova(){ $('mt').textContent='Nova Visita'; ['v_id','v_nome','v_wpp','v_cep','v_cid','v_log','v_num','v_bai','v_uf','v_link','v_data','v_hora'].forEach(function(i){$(i).value='';}); $('wppst').textContent=''; vendsBox({}); $('ov').classList.add('open'); }
+function fecha(){ $('ov').classList.remove('open'); }
+function dbr(s){ var p=(''+(s||'')).split('-'); return p.length===3?(p[2]+'/'+p[1]+'/'+p[0]):(s||''); }
+async function load(){ try{ VIS=await api('GET','/api/comercial/visitas');
+ var hoje=new Date().toISOString().slice(0,10);
+ var fut=VIS.filter(function(v){return (v.data||'')>=hoje && v.status==='agendada';}).sort(function(a,b){return ((a.data||'')+(a.hora||'')).localeCompare((b.data||'')+(b.hora||''));});
+ $('k_ag').textContent=fut.length; $('k_tot').textContent=VIS.length; $('k_prox').textContent=fut.length?(dbr(fut[0].data)+' '+(fut[0].hora||'')):'-';
+ $('rows').innerHTML=VIS.map(function(v){
+  var end=[v.logradouro,v.numero].filter(Boolean).join(', ')+(v.cidade?(' - '+v.cidade+(v.uf?'/'+v.uf:'')):'');
+  var vd=(v.vendedores_nomes||[]).join(', ')||'-';
+  return '<tr><td><b>'+esc(v.nome||'-')+'</b></td><td>'+esc(v.whatsapp||'-')+'</td><td>'+dbr(v.data)+' '+esc(v.hora||'')+'</td>'+
+   '<td style="font-size:12px">'+esc(end||'-')+(v.link_local?' <a href="'+esc(v.link_local)+'" target="_blank" rel="noopener" style="color:var(--accent)">mapa</a>':'')+'</td>'+
+   '<td style="font-size:12px">'+esc(vd)+'</td>'+
+   '<td style="text-align:right;white-space:nowrap"><button class="act" onclick="editar(\\''+v.id+'\\')">editar</button><button class="act" onclick="reenviar(\\''+v.id+'\\')">reenviar</button><button class="act" style="color:var(--bad)" onclick="excluir(\\''+v.id+'\\')">excluir</button></td></tr>';
+ }).join('')||'<tr><td colspan="6" class="center">Nenhuma visita agendada.</td></tr>';
+ }catch(e){ msg('Erro: '+e.message); } }
+function editar(id){ var v=VIS.filter(function(x){return x.id===id})[0]; if(!v)return; $('mt').textContent='Editar Visita';
+ $('v_id').value=v.id; $('v_nome').value=v.nome||''; $('v_wpp').value=v.whatsapp||''; soDig($('v_wpp'));
+ $('v_cep').value=v.cep||''; $('v_cid').value=v.cidade||''; $('v_log').value=v.logradouro||''; $('v_num').value=v.numero||''; $('v_bai').value=v.bairro||''; $('v_uf').value=v.uf||''; $('v_link').value=v.link_local||''; if($('v_link').value)$('v_link')._auto=null; $('v_data').value=v.data||''; $('v_hora').value=v.hora||'';
+ var sel={}; (v.vendedor_ids||[]).forEach(function(x){sel[x]=1;}); vendsBox(sel); $('ov').classList.add('open'); }
+async function salvar(){ var wpp=($('v_wpp').value||'').replace(/[^0-9]/g,'');
+ if(!$('v_nome').value.trim()){ msg('Informe o nome do cliente'); return; }
+ if(wpp.length!==13){ msg('WhatsApp precisa ter 13 digitos (55 + DDD + numero).'); return; }
+ if(!$('v_data').value||!$('v_hora').value){ msg('Informe data e hora da visita'); return; }
+ var b={ id:$('v_id').value, nome:$('v_nome').value.trim(), whatsapp:wpp, cep:$('v_cep').value.trim(), logradouro:$('v_log').value.trim(), numero:$('v_num').value.trim(), bairro:$('v_bai').value.trim(), cidade:$('v_cid').value.trim(), uf:$('v_uf').value.trim().toUpperCase(), link_local:$('v_link').value.trim(), data:$('v_data').value, hora:$('v_hora').value, vendedor_ids:selVends() };
+ try{ var r=await api('POST','/api/comercial/visitas/salvar',b); fecha();
+  var extra=''; if(r.envio){ var nv=(r.envio.vendedores||[]).filter(function(x){return x.ok;}).length; extra=' — WhatsApp: cliente '+(r.envio.cliente?'OK':'FALHOU')+', '+nv+'/'+(r.envio.vendedores||[]).length+' vendedor(es)'; }
+  msg('Visita salva'+(b.id?'':extra)+'.',true); load(); }catch(e){ msg('Erro: '+e.message); } }
+async function reenviar(id){ if(!confirm('Reenviar o WhatsApp de marcacao (cliente + vendedores)?'))return; try{ var r=await api('POST','/api/comercial/visitas/'+id+'/reenviar',{}); var nv=((r.envio&&r.envio.vendedores)||[]).filter(function(x){return x.ok;}).length; msg('Reenviado — cliente '+((r.envio&&r.envio.cliente)?'OK':'falhou')+', '+nv+' vendedor(es).',true); }catch(e){ msg('Erro: '+e.message); } }
+async function excluir(id){ if(!confirm('Excluir esta visita?'))return; try{ await api('DELETE','/api/comercial/visitas/'+id); msg('Excluida.',true); load(); }catch(e){ msg('Erro: '+e.message); } }
+</script>
+"""
+
+
 _REACT_NAV = '<nav class="side rside"><div class="rlogo"><img src="/brand/logo-icon.png" alt=""><b>COREXIA</b></div><div class="rsec">Monitoramento</div><a class="rit" href="/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg><span>Dashboard Geral</span></a><a class="rit" href="/mapa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>Corexia Map</span></a><a class="rit" href="/propostas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg><span>Propostas</span></a><a class="rit" href="/planos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg><span>Planos</span></a><a class="rit" href="/contratos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg><span>Contratos</span></a><a class="rit active" href="/comercial/analiticos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l3-4 3 2 4-6"/></svg><span>Controle de IA (Global)</span></a><a class="rit" href="/faturas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg><span>Faturas</span></a><a class="rit" href="/contas-pagar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg><span>Contas a Pagar</span></a><a class="rit" href="/vendedores"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Vendedores</span></a><a class="rit" href="/comissionamento"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg><span>Comissionamento</span></a><a class="rit" href="/usuarios"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Gestão de Usuários</span></a><div class="rsec">Gestão Empresarial</div><a class="rit" href="/Provedores"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg><span>Provedores</span></a><a class="rit" href="/portal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg><span>Ver Portal do Cliente</span></a><a class="rit" href="/comercial/seguranca"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span>Seguranca (2FA)</span></a><div class="ruser"><div class="ravatar" id="avatar">A</div><div class="ruinfo"><div class="runame"><b id="who">Admin</b><span class="rbadge">COREXIA</span></div><span id="whomail">admin@corexia.com</span></div><a href="/" class="rlogout" title="Voltar ao painel">&#10162;</a></div></nav>'
 _REACT_TOPRIGHT = '<div class="rtop"><div class="ricon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg></div><div class="ricon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></div><div class="ricon" style="position:relative"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg><span class="rdot"></span></div><div class="ravatar" style="width:34px;height:34px;font-size:14px">A</div></div>'
 def _shell_react(titulo, body):
@@ -605,6 +845,7 @@ _PROV_ITENS = [
     ("gestao-usuarios", "Gestao de Usuarios", "Gestao de Usuarios"),
     ("seguranca", "Seguranca", "Seguranca (2FA)"),
     ("chamados", "Chamados", "Suporte / Chamados"),
+    ("ajuda", "Ajuda", "Ajuda"),
 ]
 
 
@@ -640,7 +881,7 @@ def _prov_shell(active, titulo, body, req=None):
             perms = None
     itens = _PROV_ITENS
     if perms is not None:
-        itens = [it for it in _PROV_ITENS if it[0] in perms]
+        itens = [it for it in _PROV_ITENS if it[0] in perms or it[0] == "ajuda"]
         if active not in perms:
             body = ('<div class="center" style="padding:70px">'
                     '<div style="font-size:18px;color:var(--ink);margin-bottom:8px">Sem permissao de acesso</div>'
@@ -2029,8 +2270,72 @@ async function acLoad(){ try{
 _PROV_TIMELAPSE_BODY = '<iframe src="/timelapse" style="width:100%;height:82vh;min-height:560px;border:0;border-radius:12px;background:#0b0d12"></iframe>'
 
 
+_PROV_AJUDA_DESC = {
+    "": "Visao geral do seu negocio: total de clientes, cameras online/offline, faturamento e ultimos alertas. E a tela inicial do painel.",
+    "clientes": "Cadastre e gerencie seus clientes: dados, plano, cameras, criar acesso ao portal, sub-usuarios e mosaicos.",
+    "migracao": "Importe em lote os clientes que ja existem na sua conta Asaas para dentro da Corexia, sem recadastrar tudo a mao.",
+    "propostas": "Monte e envie propostas comerciais para novos clientes; ao serem aceitas viram contrato e cobranca automaticamente.",
+    "planos": "Crie e edite os planos que voce vende (valor, cameras incluidas, modulos de IA e dias de gravacao).",
+    "faturas": "Acompanhe as cobrancas dos seus clientes: pagas, pendentes e vencidas (espelho do Asaas).",
+    "conciliacao": "Espelho manual da sua carteira Asaas para conferir entradas e repasses. Recurso exclusivo da sua conta.",
+    "cameras": "Cadastre cameras e ligue/desligue os analiticos de IA por camera (arma, queda, capacete, intrusao, etc.) e por horario.",
+    "gravacoes": "Veja e baixe as gravacoes em nuvem das cameras que tem plano de gravacao contratado.",
+    "timelapse": "Gere um video acelerado (timelapse) de varios dias de gravacao de uma camera.",
+    "heatmap": "Veja o mapa de calor de cada camera: onde ha mais movimento de pessoas na cena.",
+    "acessos": "Gerencie o controle de acesso facial (portaria): pessoas autorizadas e registros de entrada.",
+    "alertas": "Historico dos alertas de IA gerados pelas cameras, com imagem e video do ocorrido.",
+    "preferencias": "Escolha quais tipos de alerta cada cliente recebe e por quais canais.",
+    "plantao": "Defina os numeros de WhatsApp que recebem TODOS os alertas das cameras (equipe de plantao).",
+    "marca": "Personalize o white-label: nome, logo e cores do seu painel e do portal dos seus clientes.",
+    "empresa": "Seus dados cadastrais, endereco e informacoes da empresa.",
+    "vendedores": "Cadastre vendedores externos/internos para atribuir vendas e calcular comissao.",
+    "comissionamento": "Configure as regras e acompanhe as comissoes dos seus vendedores.",
+    "ranking": "Veja seus clientes ranqueados (por valor, quantidade de cameras, etc.).",
+    "demonstrador": "Crie um acesso de demonstracao temporario para apresentar o sistema a um possivel cliente.",
+    "gestao-usuarios": "Crie usuarios da sua equipe e defina quais menus cada um pode acessar.",
+    "seguranca": "Ative a verificacao em 2 passos (2FA) por WhatsApp para proteger o acesso a sua conta.",
+    "chamados": "Abra e acompanhe chamados de suporte com a Corexia.",
+}
+
+
+def prov_ajuda_page(req: Request):
+    itens = _prov_itens_for(req)  # ja remove Conciliacao p/ quem nao tem (ex.: nao-Viggia)
+    perms = None
+    try:
+        _u = _current_user(req)
+        if _u and _u.get("role") == "provedor" and _u.get("id"):
+            _c = _db()
+            _rr = _c.execute("SELECT menu_perms, equipe FROM users WHERE id=?", (_u.get("id"),)).fetchone()
+            _c.close()
+            if _rr and (_rr["equipe"] or 0) and _rr["menu_perms"]:
+                perms = set(json.loads(_rr["menu_perms"]))
+    except Exception:
+        perms = None
+    if perms is not None:
+        itens = [it for it in itens if it[0] in perms or it[0] == "ajuda"]
+    cards = []
+    for _s, _l, _t in itens:
+        if _s == "ajuda":
+            continue
+        _d = _PROV_AJUDA_DESC.get(_s, "")
+        _href = "/provedor" + ("/" + _s if _s else "")
+        cards.append('<a class="ajuda-card" href="%s"><div class="ajuda-t">%s</div><div class="ajuda-d">%s</div></a>'
+                     % (_href, _l, _d))
+    _style = ('<style>.ajuda-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-top:6px}'
+              '.ajuda-card{display:block;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:15px 16px;text-decoration:none;transition:border-color .15s,transform .1s}'
+              '.ajuda-card:hover{border-color:rgba(249,115,22,.5);transform:translateY(-2px)}'
+              '.ajuda-t{font-weight:700;font-size:15px;color:var(--ink);margin-bottom:6px}'
+              '.ajuda-d{color:var(--muted);font-size:13px;line-height:1.55}</style>')
+    body = ('<div class="anx-head"><p class="anx-sub">Guia rapido do painel: o que voce faz em cada menu. '
+            'Clique num card para ir direto ao menu.</p></div>'
+            '<div class="ajuda-grid">' + "".join(cards) + '</div>' + _style)
+    return _prov_shell("ajuda", "Ajuda", body, req)
+
+
 @router.get("/provedor/{slug}")
 def prov_generico(slug: str, req: Request):
+    if slug == "ajuda":
+        return prov_ajuda_page(req)
     if slug == "timelapse":
         return _prov_shell("timelapse", "Timelapse", _PROV_TIMELAPSE_BODY, req)
     if slug == "conciliacao":
@@ -2171,9 +2476,27 @@ def prov_faturas_api(req: Request):
     u, pid = _prov_req(req)
     if not pid:
         return JSONResponse({"error": "sem permissao"}, status_code=403)
-    c = _db(); rows = c.execute("SELECT id, data FROM entities WHERE entity='Fatura'").fetchall(); c.close()
+    c = _db()
+    rows = c.execute("SELECT id, data FROM entities WHERE entity='Fatura'").fetchall()
+    clis = c.execute("SELECT id, data FROM entities WHERE entity='Cliente'").fetchall()
+    c.close()
+    docmap = {}
+    for cr in clis:
+        try:
+            cd = json.loads(cr["data"])
+            docmap[cr["id"]] = (cd.get("document_number", ""), cd.get("document_type", ""))
+        except Exception:
+            pass
     out = [dict(json.loads(r["data"]), id=r["id"]) for r in rows]
-    return [x for x in out if x.get("provedor_id") == pid and x.get("cliente_id")]
+    out = [x for x in out if x.get("provedor_id") == pid and x.get("cliente_id")]
+    for x in out:
+        dm = docmap.get(x.get("cliente_id"))
+        if dm:
+            if not x.get("document_number"):
+                x["document_number"] = dm[0]
+            if not x.get("document_type"):
+                x["document_type"] = dm[1]
+    return out
 
 
 @router.post("/api/comercial/prov/faturas/sync")
@@ -4797,10 +5120,11 @@ def clientes_asaas(req: Request):
     if not u:
         return JSONResponse({"error": "nao autenticado"}, status_code=401)
     c = _db(); rows = c.execute("SELECT data FROM entities WHERE entity='Fatura'").fetchall(); c.close()
+    escopo = req.query_params.get("escopo", "")
     vistos = {}
     for r in rows:
         d = json.loads(r["data"])
-        if not _mine(u, d):
+        if not _mine(u, d) or (escopo == "corexia" and d.get("provedor_id")):
             continue
         cid = d.get("asaas_customer_id") or d.get("cliente_id") or ""
         if cid and cid not in vistos:
@@ -4818,10 +5142,11 @@ def comissoes_receber(req: Request):
     fats = [dict(json.loads(r["data"]), id=r["id"]) for r in c.execute("SELECT id,data FROM entities WHERE entity='Fatura'").fetchall()]
     pagtos = [json.loads(r["data"]) for r in c.execute("SELECT data FROM entities WHERE entity='CommissionPagto'").fetchall()]
     c.close()
-    vincs = [v for v in vincs if _mine(u, v) and v.get("status", "ativo") == "ativo"]
+    escopo = req.query_params.get("escopo", "")
+    vincs = [v for v in vincs if _mine(u, v) and v.get("status", "ativo") == "ativo" and (escopo != "corexia" or not v.get("provedor_id"))]
     porcli = {}
     for f in fats:
-        if not _mine(u, f) or f.get("status") != "paga":
+        if not _mine(u, f) or f.get("status") != "paga" or (escopo == "corexia" and f.get("provedor_id")):
             continue
         k = f.get("asaas_customer_id") or f.get("cliente_id") or ""
         porcli.setdefault(k, []).append(f)
@@ -4980,7 +5305,7 @@ function rowP(p){ var st=p.status||'pendente'; var si=stInfo(st);
   '<td>'+esc(p.plano_nome||'-')+'</td><td>'+(p.qtd_cameras!=null?p.qtd_cameras:'-')+'</td>'+
   '<td class="money">'+brl(p.valor_mensal)+'</td><td>'+esc(p.consultor||'-')+'</td>'+
   '<td><span class="pill '+si[1]+'">'+si[0]+'</span></td><td style="text-align:right;white-space:nowrap">'+ac+'</td></tr>'; }
-async function load(){ try{ PROPS=await api('GET','/api/entities/Proposta');
+async function load(){ try{ PROPS=await api('GET','/api/entities/Proposta'); PROPS=(PROPS||[]).filter(function(p){return !p.provedor_id;});
   var by=function(s){return PROPS.filter(function(p){return (p.status||'pendente')===s}).length};
   $('k_ag').textContent=by('pendente'); $('k_env').textContent=by('enviada'); $('k_ass').textContent=by('assinada'); $('k_fec').textContent=by('fechada');
   $('rows').innerHTML=PROPS.map(rowP).join('')||'<tr><td colspan="7" class="center">Nenhuma proposta</td></tr>';
@@ -5081,7 +5406,7 @@ _VENDEDORES_BODY = """
  <div class="foot"><button onclick="fecha()">Cancelar</button><button class="btn-primary" onclick="salvarV()">Criar</button></div></div></div>
 <script>
 var VEND=[]; window.PAGE_INIT=loadV;
-async function loadV(){ try{ VEND=await api('GET','/api/entities/Vendedor?limit=1000');
+async function loadV(){ try{ VEND=await api('GET','/api/entities/Vendedor?limit=1000'); if(location.pathname.indexOf('/comercial/')===0) VEND=(VEND||[]).filter(function(v){return !v.provedor_id;});
  var at=VEND.filter(function(v){return (v.status||'ativo')==='ativo'}).length;
  $('k_tot').textContent=VEND.length; $('k_at').textContent=at; $('k_in').textContent=VEND.length-at;
  $('rows').innerHTML=VEND.map(function(v){ var on=(v.status||'ativo')==='ativo';
@@ -5141,11 +5466,11 @@ window.PAGE_INIT=initC;
 async function initC(){ await Promise.all([loadVinc(), loadDrops(), loadReceber()]); }
 function tab(n){ $('pane1').style.display=n===1?'':'none'; $('pane2').style.display=n===2?'':'none';
  $('tab1').className=n===1?'btn-primary':''; $('tab2').className=n===2?'btn-primary':''; if(n===2) renderReceber(); }
-async function loadDrops(){ try{ VENDS=await api('GET','/api/entities/Vendedor?limit=1000'); }catch(e){ VENDS=[]; }
- try{ CLIS=await api('GET','/api/comercial/clientes-asaas'); }catch(e){ CLIS=[]; }
+async function loadDrops(){ try{ VENDS=await api('GET','/api/entities/Vendedor?limit=1000'); if(location.pathname.indexOf('/comercial/')===0) VENDS=(VENDS||[]).filter(function(v){return !v.provedor_id;}); }catch(e){ VENDS=[]; }
+ try{ CLIS=await api('GET','/api/comercial/clientes-asaas'+(location.pathname.indexOf('/comercial/')===0?'?escopo=corexia':'')); }catch(e){ CLIS=[]; }
  $('c_vend').innerHTML='<option value="">- selecione -</option>'+VENDS.map(function(v){return '<option value="'+v.id+'">'+esc(v.nome)+'</option>';}).join('');
  $('c_cli').innerHTML='<option value="">- selecione -</option>'+CLIS.map(function(c){return '<option value="'+c.id+'">'+esc(c.nome)+'</option>';}).join(''); }
-async function loadVinc(){ try{ VINC=await api('GET','/api/entities/Comissao?limit=2000');
+async function loadVinc(){ try{ VINC=await api('GET','/api/entities/Comissao?limit=2000'); if(location.pathname.indexOf('/comercial/')===0) VINC=(VINC||[]).filter(function(v){return !v.provedor_id;});
  $('vrows').innerHTML=VINC.map(function(v){ var on=(v.status||'ativo')==='ativo';
   return '<tr><td><b>'+esc(v.vendedor_nome||'-')+'</b></td><td>'+esc(v.cliente_nome||'-')+'</td>'+
    '<td>'+esc(v.tipo==='fixo'?'Fixo':'Percentual')+'</td><td class="money">'+(v.tipo==='fixo'?brl(v.valor):(v.valor+'%'))+'</td>'+
@@ -5154,7 +5479,7 @@ async function loadVinc(){ try{ VINC=await api('GET','/api/entities/Comissao?lim
    '<button class="act" onclick="excluirVinc(\\''+v.id+'\\')">excluir</button></td></tr>'; }).join('')
    ||'<tr><td colspan="6" class="center">Nenhum vinculo. Clique em Novo Vinculo.</td></tr>';
  }catch(e){ msg('Erro: '+e.message); } }
-async function loadReceber(){ try{ RECEBER=await api('GET','/api/comercial/comissoes/receber');
+async function loadReceber(){ try{ RECEBER=await api('GET','/api/comercial/comissoes/receber'+(location.pathname.indexOf('/comercial/')===0?'?escopo=corexia':''));
  $('k_pend').textContent=brl(RECEBER.total_pendente); $('k_pago').textContent=brl(RECEBER.total_pago); $('k_viv').textContent=RECEBER.vinculos_ativos;
  renderReceber(); }catch(e){ msg('Erro: '+e.message); } }
 function renderReceber(){ var q=($('q')?$('q').value:'').toLowerCase();
@@ -5288,7 +5613,7 @@ function fmtDoc(raw){ var d=digs(raw);
 function dataExtenso(iso){ var p=(''+(iso||'')).slice(0,10).split('-'); if(p.length!==3||!p[0]) return '';
  return p[2]+' de '+(MESES[parseInt(p[1],10)-1]||'')+' de '+p[0]; }
 function stInfoC(s){ return {rascunho:['Rascunho','off'],enviado:['Enviado','off'],assinado:['Assinado','ok']}[s||'rascunho']||['?','off']; }
-async function initC(){ try{ PROPS=await api('GET','/api/entities/Proposta'); }catch(e){ PROPS=[]; } fillProp(); loadC(); }
+async function initC(){ try{ PROPS=(await api('GET','/api/entities/Proposta')).filter(function(p){return !p.provedor_id;}); }catch(e){ PROPS=[]; } fillProp(); loadC(); }
 function fillProp(){ var s=$('g_prop'); if(!s)return;
  s.innerHTML='<option value="">- selecione a proposta -</option>'+PROPS.map(function(p){
   return '<option value="'+p.id+'">'+esc((p.cliente_nome||'(sem nome)')+' - '+(fmtDoc(p.document_number)||'sem doc'))+'</option>'; }).join(''); }
@@ -5297,7 +5622,7 @@ function onProp(){ var p=PROPS.filter(function(x){return x.id===$('g_prop').valu
  var lbl=digs(p.document_number).length===11?'CPF':'CNPJ';
  $('pv_nome').textContent=p.cliente_nome||'-'; $('pv_doc').textContent=lbl+': '+(fmtDoc(p.document_number)||'-');
  $('g_local').value=(p.cidade||'')+(p.uf?('/'+p.uf):''); pv.style.display='block'; }
-async function loadC(){ try{ CONTR=await api('GET','/api/entities/Contrato?limit=2000'); kpisC(); render(); }catch(e){ msg('Erro: '+e.message); } }
+async function loadC(){ try{ CONTR=(await api('GET','/api/entities/Contrato?limit=2000')).filter(function(c){return !c.provedor_id;}); kpisC(); render(); }catch(e){ msg('Erro: '+e.message); } }
 function kpisC(){ var by=function(s){return CONTR.filter(function(c){return (c.status||'rascunho')===s}).length};
  $('k_ra').textContent=by('rascunho'); $('k_en').textContent=by('enviado'); $('k_as').textContent=by('assinado'); }
 function render(){ var q=($('q').value||'').toLowerCase();
@@ -5863,7 +6188,9 @@ async function camSalvar(){ if(!ACLI)return; var ids=[]; Array.prototype.forEach
 """
 
 _PROV_FATURAS_BODY = """
-<div style="display:flex;gap:10px;align-items:center;margin-bottom:12px"><div style="flex:1"></div>
+<div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+ <input id="q" placeholder="Buscar por nome, CPF ou CNPJ..." oninput="render()" style="flex:1;min-width:220px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;color:var(--ink);padding:10px 12px;font-size:14px">
+ <select id="mes" onchange="render()" style="background:var(--surface2);border:1px solid var(--border);border-radius:9px;color:var(--ink);padding:10px 12px;font-size:14px"><option value="">Todos os meses</option></select>
  <button class="btn-primary" onclick="sync()">Sincronizar Asaas</button></div>
 <div id="msg" class="msg"></div>
 <div class="cards">
@@ -5874,13 +6201,16 @@ _PROV_FATURAS_BODY = """
 <tbody id="rows"><tr><td colspan="5" class="center">carregando...</td></tr></tbody></table>
 <script>
 var FAT=[]; window.PAGE_INIT=load;
+function digits(s){return (''+(s||'')).replace(/[^0-9]/g,'');}
+function fillMeses(){ var set={}; FAT.forEach(function(f){var m=(''+(f.vencimento||'')).slice(0,7); if(m.length===7)set[m]=1;}); var arr=Object.keys(set).sort().reverse(); var sel=$('mes'); if(!sel)return; var cur=sel.value; sel.innerHTML='<option value="">Todos os meses</option>'+arr.map(function(m){var p=m.split('-'); return '<option value="'+m+'">'+p[1]+'/'+p[0]+'</option>';}).join(''); sel.value=cur; }
+function filtrar(){ var qt=(($('q')||{}).value||'').trim().toLowerCase(); var qd=digits(($('q')||{}).value); var mes=(($('mes')||{}).value||''); return FAT.filter(function(f){ if(mes && (''+(f.vencimento||'')).slice(0,7)!==mes) return false; if(!qt) return true; var nome=(''+(f.cliente_nome||'')).toLowerCase(); var doc=digits(f.document_number); var byNome=nome.indexOf(qt)>=0; var byDoc=(qd.length>=3 && doc.indexOf(qd)>=0); return byNome||byDoc; }); }
 function dtd(s){var p=(''+(s||'')).slice(0,10).split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:(s||'-');}
 function stp(s){return {paga:['Paga','ok'],pendente:['Pendente','off'],vencida:['Vencida','off'],cancelada:['Cancelada','off']}[s]||['?','off'];}
-async function load(){ try{ FAT=await api('GET','/api/comercial/prov/faturas'); kpis(); render(); }catch(e){ msg('Erro (logado como provedor?): '+e.message); } }
-function kpis(){ var ar=0,vc=0,rc=0; FAT.forEach(function(f){var v=parseFloat(f.valor||0);var s=f.status; if(s==='paga')rc+=v; else if(s==='vencida')vc+=v; else if(s==='pendente')ar+=v;});
+async function load(){ try{ FAT=await api('GET','/api/comercial/prov/faturas'); fillMeses(); render(); }catch(e){ msg('Erro (logado como provedor?): '+e.message); } }
+function kpis(L){ var ar=0,vc=0,rc=0; (L||FAT).forEach(function(f){var v=parseFloat(f.valor||0);var s=f.status; if(s==='paga')rc+=v; else if(s==='vencida')vc+=v; else if(s==='pendente')ar+=v;});
  $('k_ar').textContent=brl(ar); $('k_vc').textContent=brl(vc); $('k_rc').textContent=brl(rc); }
-function render(){ $('rows').innerHTML=FAT.map(function(f){var si=stp(f.status); var col=f.status==='vencida'?'color:var(--bad)':(f.status==='paga'?'color:var(--ok)':'');
- return '<tr><td>'+esc(f.cliente_nome||'-')+'</td><td>'+esc(f.numero||'-')+'</td><td>'+dtd(f.vencimento)+'</td><td class="money">'+brl(f.valor)+'</td><td><span class="pill '+si[1]+'" style="'+col+'">'+si[0]+'</span></td></tr>';}).join('')||'<tr><td colspan="5" class="center">Nenhuma fatura. Clique em Sincronizar Asaas.</td></tr>'; }
+function render(){ var L=filtrar(); kpis(L); $('rows').innerHTML=L.map(function(f){var si=stp(f.status); var col=f.status==='vencida'?'color:var(--bad)':(f.status==='paga'?'color:var(--ok)':'');
+ return '<tr><td>'+esc(f.cliente_nome||'-')+'</td><td>'+esc(f.numero||'-')+'</td><td>'+dtd(f.vencimento)+'</td><td class="money">'+brl(f.valor)+'</td><td><span class="pill '+si[1]+'" style="'+col+'">'+si[0]+'</span></td></tr>';}).join('')||'<tr><td colspan="5" class="center">Nenhuma fatura para este filtro.</td></tr>'; }
 async function sync(){ try{ msg('Sincronizando com o Asaas...',true); var r=await api('POST','/api/comercial/prov/faturas/sync'); msg((r.sincronizadas||0)+' faturas sincronizadas.',true); load(); }catch(e){ msg('Erro: '+e.message); } }
 </script>
 """
@@ -6530,7 +6860,7 @@ function stp(s){ var m={aberto:['Aberto','#fbbf24'],em_andamento:['Em andamento'
 function fone(s){ s=(''+(s||'')); var t=''; for(var i=0;i<s.length;i++){ if(s.charAt(i)>='0'&&s.charAt(i)<='9')t+=s.charAt(i); } if(t.length>=12){var d=t.slice(-11);return '('+d.slice(0,2)+') '+d.slice(2,7)+'-'+d.slice(7);} return s||'-'; }
 function dt(s){ if(!s)return '-'; try{var d=new Date(s); return d.toLocaleDateString('pt-BR')+' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);}catch(e){return s;} }
 function setF(f){ F=f; $('tab_ab').className=(f==='abertos'?'btn-primary':'act'); $('tab_all').className=(f===''?'btn-primary':'act'); render(); }
-async function load(){ try{ ALL=(await api('GET','/api/chamados'))||[]; render(); }catch(e){ msg('Erro: '+e.message); } }
+async function load(){ try{ ALL=((await api('GET','/api/chamados'))||[]).filter(function(c){ return !c.cliente_id && c.aberto_por_role!=='cliente'; }); render(); }catch(e){ msg('Erro: '+e.message); } }
 function render(){ var L=ALL.filter(function(c){ return F==='abertos' ? (c.status==='aberto'||c.status==='em_andamento') : true; });
  if(!L.length){ $('rows').innerHTML='<tr><td colspan="8" class="center" style="color:var(--muted)">Nenhum chamado.</td></tr>'; return; }
  $('rows').innerHTML=L.map(function(c){ var gi=ALL.indexOf(c); var acts='<button class="act" onclick="resp('+gi+')">responder</button>';
@@ -6850,16 +7180,11 @@ _DEMO_BODY = """
 <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:22px">
  <h2 style="margin:0 0 12px;font-size:17px">Nova demonstracao</h2>
  <p style="color:var(--muted);font-size:13px;margin:0 0 14px">Concede a um usuario o acesso a ate 4 cameras por um periodo. Ele vera so essas cameras e o acesso expira sozinho.</p>
- <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:14px">
-  <label class="ck"><input type="radio" name="umodo" id="u_novo" checked onchange="modoUser()"> Criar login novo</label>
-  <label class="ck"><input type="radio" name="umodo" id="u_exi" onchange="modoUser()"> Usuario existente</label>
- </div>
  <div id="box_novo" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
   <div class="dfld"><label>Nome</label><input id="n_nome" placeholder="Ex.: Cliente Demo"></div>
   <div class="dfld"><label>E-mail</label><input id="n_email" placeholder="demo@exemplo.com"></div>
   <div class="dfld"><label>Senha (min 4)</label><input id="n_senha" type="text" placeholder="senha"></div>
  </div>
- <div id="box_exist" style="display:none;margin-bottom:16px"><div class="dfld"><label>Usuario ja cadastrado</label><select id="u_exist"></select></div></div>
  <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
   <div class="dfld" style="flex:1;min-width:280px"><label>Cameras da demo &nbsp;<span id="camcount" style="color:var(--accent);font-weight:700">0/4 selecionadas</span></label>
    <input id="cq" placeholder="Buscar camera pelo nome..." oninput="renderCams()" style="margin-bottom:8px">
@@ -6881,16 +7206,13 @@ var CAMS=[], USERS=[], SEL={}; window.PAGE_INIT=init;
 async function init(){
  try{
   CAMS=(await api('GET','/api/entities/Camera'))||[];
-  USERS=((await api('GET','/api/users'))||[]).filter(function(u){return u.role!=='admin';});
-  fillUsers(); renderCams(); loadList();
+  renderCams(); loadList();
   $('camlist').addEventListener('change',function(e){ var el=e.target; var id=el.getAttribute&&el.getAttribute('data-cam'); if(!id)return;
    if(el.checked){ if(Object.keys(SEL).length>=4 && !SEL[id]){ msg('Maximo 4 cameras.'); el.checked=false; return; } SEL[id]=1; } else { delete SEL[id]; }
    $('camcount').textContent=Object.keys(SEL).length+'/4 selecionadas'; });
   $('rows').addEventListener('click',function(e){ var b=e.target.closest('[data-rev]'); if(b) revogar(b.getAttribute('data-rev')); });
  }catch(e){ msg('Erro (logado como admin?): '+e.message); }
 }
-function modoUser(){ var novo=$('u_novo').checked; $('box_novo').style.display=novo?'grid':'none'; $('box_exist').style.display=novo?'none':'block'; }
-function fillUsers(){ $('u_exist').innerHTML='<option value="">- selecione -</option>'+USERS.map(function(u){return '<option value="'+esc(u.id)+'">'+esc((u.full_name||u.email)+' - '+u.email)+'</option>';}).join(''); }
 function renderCams(){ var q=($('cq').value||'').toLowerCase();
  var arr=CAMS.filter(function(c){ return !q || (((c.nome||'')+' '+(c.provedor_nome||'')).toLowerCase().indexOf(q)>=0); });
  $('camlist').innerHTML=arr.map(function(c){ var on=!!SEL[c.id];
@@ -6902,9 +7224,8 @@ async function criar(){
  var dias=parseInt($('dur').value||0)||0; var cams=Object.keys(SEL);
  if(!cams.length){ msg('Escolha de 1 a 4 cameras.'); return; }
  var body={cameras:cams,dias:dias};
- if($('u_novo').checked){ body.email=$('n_email').value.trim(); body.password=$('n_senha').value; body.full_name=$('n_nome').value.trim();
-  if(!body.email||!body.password){ msg('Preencha email e senha do novo login.'); return; } }
- else { body.user_id=$('u_exist').value; if(!body.user_id){ msg('Selecione um usuario.'); return; } }
+ body.email=$('n_email').value.trim(); body.password=$('n_senha').value; body.full_name=$('n_nome').value.trim();
+ if(!body.email||!body.password){ msg('Preencha email e senha do novo login.'); return; }
  try{ var r=await api('POST','/api/demo/criar',body); msg('Demonstracao criada! Expira em '+esc(r.expira)+'.',true);
   SEL={}; ['n_nome','n_email','n_senha'].forEach(function(i){$(i).value='';}); renderCams(); loadList(); }
  catch(e){ msg('Erro: '+e.message); }

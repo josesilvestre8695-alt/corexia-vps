@@ -1711,7 +1711,7 @@ def _process(predictions, video_frame):
     # YOLO muito confiante -> alerta direto; senao Gemini confirma (frame anotado + zoom).
     # EXCECAO: fogo SEMPRE passa pelo Gemini (o modelo marca qualquer vermelho como fogo com
     # confianca alta -> o bypass deixava passar falso-positivo; o Gemini derruba isso).
-    if tipo in TIPOS_SEM_GEMINI or (conf >= HIGH_CONF and tipo != "fogo") or not USE_GEMINI:
+    if tipo in TIPOS_SEM_GEMINI or (conf >= HIGH_CONF and tipo not in ("fogo", "arma_branca", "arma_fogo")) or not USE_GEMINI:
         veredito, desc = True, _desc_tipo(tipo, conf, melhor_p)
     else:
         veredito, desc = gemini_confirma(buf.tobytes(), cam["nome"], tipo, jpg_crop)
