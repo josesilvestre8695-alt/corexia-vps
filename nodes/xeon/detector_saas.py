@@ -248,7 +248,8 @@ def gemini_confirma(jpg, nome, tipo, jpg_crop=None):
         print("[gemini] erro (isolado):", e)
         if tipo == "fogo":
             return False, f"{tipo} nao verificado"
-        return True, f"{tipo} detectado"
+        # arma/faca: NUNCA fail-open. Gemini indisponivel (timeout/erro) -> INDEFINIDO -> quarentena (sem WhatsApp).
+        return None, f"{tipo} nao verificado (gemini indisponivel)"
 
 
 def gemini_balaclava(crop_jpg, nome):
@@ -294,11 +295,12 @@ def gemini_queda(crop_jpg, nome, still_secs=0):
     global _gem_fails, _gem_open_until, _gem_down
     if _gem_open_until and time.time() < _gem_open_until:
         return False, ""
-    prompt = ('Camera de seguranca "' + str(nome) + '". A imagem e o RECORTE de uma pessoa que esta ha ~' + str(int(still_secs)) +
-              's DEITADA e IMOVEL. Ela parece ter CAIDO / desmaiado / passado mal e estar no CHAO precisando de ajuda? '
-              'Responda false se for situacao NORMAL: pessoa sentada/agachada, deitada em CAMA/SOFA/REDE/espreguicadeira, '
-              'fazendo exercicio/alongamento no chao, tomando sol, nadando, ou trabalhando deitada. '
-              'Responda true SOMENTE se parecer uma pessoa desamparada no chao (queda/mal subito). '
+    prompt = ('Camera de seguranca "' + str(nome) + '". Recorte de uma pessoa imovel ha ~' + str(int(still_secs)) +
+              's. Responda "caida": true SOMENTE se a pessoa estiver CLARAMENTE DEITADA NA HORIZONTAL, esticada e '
+              'rente ao chao/solo, como quem caiu ou desmaiou (o CORPO na horizontal no chao). '
+              'Responda false em QUALQUER outra postura OU se tiver qualquer duvida: agachada, de cocoras, '
+              'curvada/inclinada para frente, ajoelhada, sentada, se abaixando, mexendo em algo, apoiada/encostada, '
+              'de pe, ou postura ambigua/sem certeza. Na duvida responda SEMPRE false. '
               'Responda SO JSON: {"caida": true/false, "descricao": "1 frase"}')
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_KEY}"
     try:
@@ -434,6 +436,8 @@ _CFG_ALIASES = {
     "capacete":    ("capacete", "moto", "moto_capacete", "capacete_moto"),
     "piscina":     ("piscina", "afogamento"),
     "queda":       ("queda", "pessoa_caida", "caido"),
+    "aglomeracao": ("aglomeracao", "aglomeração", "multidao", "tumulto"),
+    "briga":       ("briga", "brigas", "agressao", "luta"),
 }
 
 # vocabulario da tela -> model_id(s) necessarios (carga/execucao ON-DEMAND por camera)
@@ -451,6 +455,8 @@ _VOCAB_MODEL = {
     "capacete": (MODEL_ID_GENERAL,),  # capacete/moto: COCO (pessoa) + Gemini (classifica capacete vs balaclava)
     "piscina": (MODEL_ID_GENERAL,),  # afogamento usa COCO (pessoa) + Gemini
     "queda": (MODEL_ID_GENERAL,),  # pessoa caida/queda: COCO (pessoa) + Gemini
+    "aglomeracao": (MODEL_ID_GENERAL,),  # conta pessoas (COCO)
+    "briga": (MODEL_ID_GENERAL,),  # pessoas proximas + movimento -> Gemini
     "facial": (MODEL_ID_GENERAL,),  # controle de acesso: COCO so p/ a camera ser processada; recon = YuNet+SFace em _facial_check
     "guarda_piscina": (MODEL_ID_GENERAL,),  # guarda-piscina: COCO (pessoa/animal) na agua quando ARMADO
     "suspeito": (MODEL_ID_GENERAL,),  # detector de suspeitos: COCO (pessoa) -> merodeio/permanencia
@@ -1284,7 +1290,7 @@ _queda = {}          # cid -> {"since":ts,"centroid":(fx,fy),"last_check":ts}
 _queda_ultimo = {}   # cid -> ts do ultimo alerta
 _queda_dbg = {}
 QUEDA_DEBUG = os.getenv("QUEDA_DEBUG", "0") not in ("0", "false", "False", "")
-QUEDA_RATIO     = float(os.getenv("QUEDA_RATIO", "1.15").replace(",", "."))    # bbox mais LARGO que alto (w/h) = deitado
+QUEDA_RATIO     = float(os.getenv("QUEDA_RATIO", "1.4").replace(",", "."))    # bbox mais LARGO que alto (w/h) = deitado
 QUEDA_STILL     = int(os.getenv("QUEDA_STILL", "18"))                          # imovel+deitado por Xs antes de confirmar (conservador)
 QUEDA_CHECK_SEC = int(os.getenv("QUEDA_CHECK_SEC", "15"))                      # intervalo min entre chamadas ao Gemini/cam
 QUEDA_COOLDOWN  = int(os.getenv("QUEDA_COOLDOWN", "180"))                      # cooldown do alerta/cam
@@ -1505,6 +1511,157 @@ def _facial_alerta(cam, frame_bgr, face, tipo, desc, verificado):
     envia_alerta(cam, tipo, 0.9, desc, img_b64, verificado=verificado)
 
 
+# ==================== AGLOMERACAO + BRIGA ====================
+_aglo = {}
+_aglo_ultimo = {}
+AGLO_N        = int(os.getenv("AGLO_N", "5"))          # >= N pessoas = aglomeracao
+AGLO_SEC      = int(os.getenv("AGLO_SEC", "8"))        # sustentado por Xs (nao dispara com gente so passando)
+AGLO_COOLDOWN = int(os.getenv("AGLO_COOLDOWN", "180"))
+
+
+def _aglo_check(cam, predictions, frame_bgr, now):
+    if frame_bgr is None or not _tipo_ativo_na_cam(cam, "aglomeracao", now):
+        return
+    preds = predictions.get("predictions", []) if isinstance(predictions, dict) else []
+    H, W = frame_bgr.shape[:2]
+    area = None
+    for z in (cam.get("config_analitico") or {}).get("zonas_intrusao", []) or []:
+        if z.get("tipo") in ("zona", "vigilancia") and len(z.get("pontos") or []) >= 3:
+            area = z["pontos"]; break
+    pts = _person_pts(preds, W, H)
+    if area:
+        pts = [(fx, fy, p) for (fx, fy, p) in pts if _pt_in_poly(fx, fy, area)]
+    n = len(pts); cid = cam.get("id"); st = _aglo.get(cid) or {}
+    if n < AGLO_N:
+        _aglo[cid] = {"since": 0}
+        return
+    since = st.get("since") or now
+    _aglo[cid] = {"since": since}
+    if (now - since) < AGLO_SEC:
+        return
+    if now - _aglo_ultimo.get(cid, 0) < AGLO_COOLDOWN:
+        return
+    _aglo_ultimo[cid] = now
+    img_b64 = None
+    try:
+        an = frame_bgr.copy()
+        for (fx, fy, p) in pts:
+            x = float(p.get("x", 0)); y = float(p.get("y", 0)); w = float(p.get("width", 0)); h = float(p.get("height", 0))
+            cv2.rectangle(an, (int(x - w / 2), int(y - h / 2)), (int(x + w / 2), int(y + h / 2)), (0, 165, 255), 2)
+        cv2.putText(an, "AGLOMERACAO: %d pessoas" % n, (12, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 165, 255), 2)
+        ok, buf = cv2.imencode(".jpg", an)
+        if ok:
+            img_b64 = base64.b64encode(buf.tobytes()).decode()
+    except Exception as _e:
+        print("[aglo] desenho:", _e)
+    print("[aglo] %s: %d pessoas (>= %d)" % (cam.get("nome", ""), n, AGLO_N))
+    envia_alerta(cam, "aglomeracao", 0.9, "AGLOMERACAO: %d pessoas na cena (limite %d)" % (n, AGLO_N), img_b64, verificado=True)
+
+
+# ---- BRIGA (assistivo; modo CALIBRACAO por padrao: grava p/ revisao, sem WhatsApp) ----
+_briga = {}
+_briga_ultimo = {}
+BRIGA_CALIB     = os.getenv("BRIGA_CALIB", "1") not in ("0", "false", "False", "")  # 1=so quarentena/revisao; 0=alerta real
+BRIGA_MINP      = int(os.getenv("BRIGA_MINP", "2"))
+BRIGA_DIST      = float(os.getenv("BRIGA_DIST", "0.14").replace(",", "."))    # centroides proximos (frac do frame)
+BRIGA_MOTION    = float(os.getenv("BRIGA_MOTION", "0.10").replace(",", "."))  # movimento brusco (frac da cena mudou)
+BRIGA_HITS      = int(os.getenv("BRIGA_HITS", "3"))                           # frames seguidos com o padrao
+BRIGA_CHECK_SEC = int(os.getenv("BRIGA_CHECK_SEC", "8"))
+BRIGA_COOLDOWN  = int(os.getenv("BRIGA_COOLDOWN", "180"))
+
+
+def gemini_briga(jpg, nome):
+    if not USE_GEMINI or not GEMINI_KEY or not jpg:
+        return False, ""
+    global _gem_fails, _gem_open_until, _gem_down
+    if _gem_open_until and time.time() < _gem_open_until:
+        return False, ""
+    prompt = ('Camera de seguranca "' + str(nome) + '". Ha uma BRIGA / AGRESSAO FISICA REAL entre pessoas neste momento '
+              '(socos, chutes, empurroes, puxao de cabelo, luta corporal, agressao)? '
+              'Responda false se for interacao NORMAL: conversa, abraco, cumprimento, aperto de mao, brincadeira, danca, '
+              'esporte, ou pessoas apenas proximas/andando. Na duvida responda SEMPRE false. '
+              'Responda SO JSON: {"briga": true/false, "descricao": "1 frase"}')
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_KEY}"
+    try:
+        r = requests.post(url, timeout=20, json={
+            "contents": [{"parts": [{"text": prompt},
+                          {"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(jpg).decode()}}]}],
+            "generationConfig": {"response_mime_type": "application/json", "temperature": 0}})
+        if r.status_code == 429:
+            raise RuntimeError("429")
+        d = json.loads(r.json()["candidates"][0]["content"]["parts"][0]["text"])
+        _gem_fails = 0; _gem_open_until = 0.0; _gem_down = False
+        return bool(d.get("briga")), d.get("descricao", "")
+    except Exception as e:
+        _gem_fails += 1
+        if ("429" in str(e)) or _gem_fails >= GEMINI_CB_FAILS:
+            _gem_open_until = time.time() + GEMINI_CB_COOLDOWN; _gem_down = True
+        return False, ""
+
+
+def _briga_check(cam, predictions, frame_bgr, now):
+    if frame_bgr is None or not _tipo_ativo_na_cam(cam, "briga", now):
+        return
+    preds = predictions.get("predictions", []) if isinstance(predictions, dict) else []
+    H, W = frame_bgr.shape[:2]
+    pts = _person_pts(preds, W, H)
+    cid = cam.get("id"); st = _briga.get(cid) or {}
+    try:
+        g = cv2.resize(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY), (160, 90))
+    except Exception:
+        return
+    prev = st.get("prevgray"); frac = 0.0
+    if prev is not None and getattr(prev, "shape", None) == g.shape:
+        try:
+            dd = cv2.absdiff(prev, g); _, th = cv2.threshold(dd, 22, 255, cv2.THRESH_BINARY)
+            frac = float((th > 0).sum()) / (th.size or 1)
+        except Exception:
+            frac = 0.0
+    close = False
+    if len(pts) >= BRIGA_MINP:
+        cs = [(fx, fy) for (fx, fy, _p) in pts]
+        for a in range(len(cs)):
+            for b in range(a + 1, len(cs)):
+                if (((cs[a][0] - cs[b][0]) ** 2 + (cs[a][1] - cs[b][1]) ** 2) ** 0.5) <= BRIGA_DIST:
+                    close = True; break
+            if close:
+                break
+    hits = int(st.get("hits", 0))
+    hits = hits + 1 if (len(pts) >= BRIGA_MINP and close and frac >= BRIGA_MOTION) else 0
+    _briga[cid] = {"hits": hits, "last_check": st.get("last_check", 0), "prevgray": g}
+    if hits < BRIGA_HITS:
+        return
+    if now - float(_briga[cid].get("last_check", 0)) < BRIGA_CHECK_SEC:
+        return
+    _briga[cid]["last_check"] = now
+    buf = None
+    try:
+        an = frame_bgr.copy()
+        for (fx, fy, p) in pts:
+            x = float(p.get("x", 0)); y = float(p.get("y", 0)); w = float(p.get("width", 0)); h = float(p.get("height", 0))
+            cv2.rectangle(an, (int(x - w / 2), int(y - h / 2)), (int(x + w / 2), int(y + h / 2)), (0, 0, 255), 2)
+        ok, buf = cv2.imencode(".jpg", an)
+        if not ok:
+            return
+    except Exception as _e:
+        print("[briga] desenho:", _e); return
+    try:
+        ok2, desc = gemini_briga(buf.tobytes(), cam.get("nome", ""))
+    except Exception as _e:
+        print("[briga] gemini:", _e); return
+    if not ok2 or (now - _briga_ultimo.get(cid, 0) < BRIGA_COOLDOWN):
+        return
+    _briga_ultimo[cid] = now
+    try:
+        img_b64 = base64.b64encode(buf.tobytes()).decode()
+    except Exception:
+        img_b64 = None
+    verif = not BRIGA_CALIB
+    tag = "" if verif else " [CALIBRACAO - so revisao]"
+    print("[briga] %s: briga confirmada%s - %s" % (cam.get("nome", ""), tag, desc))
+    envia_alerta(cam, "briga", 0.85, "POSSIVEL BRIGA / AGRESSAO: " + (desc or "pessoas em conflito") + tag, img_b64, verificado=verif)
+
+
 def _facial_check(cam, frame_bgr, now):
     """Controle de acesso facial: detecta TODOS os rostos >= FACIAL_MIN_PX, compara com a galeria
     da camera; confirma em varios quadros; reconhecido -> registra; desconhecido -> alerta plantao."""
@@ -1611,6 +1768,16 @@ def _process(predictions, video_frame):
         _susp_check(cam, predictions, video_frame.image, time.time())
     except Exception as e:
         print("[suspeito] erro:", e)
+    # AGLOMERACAO: N+ pessoas sustentado
+    try:
+        _aglo_check(cam, predictions, video_frame.image, time.time())
+    except Exception as e:
+        print("[aglo] erro:", e)
+    # BRIGA (assistivo/calibracao): pessoas proximas + movimento -> Gemini
+    try:
+        _briga_check(cam, predictions, video_frame.image, time.time())
+    except Exception as e:
+        print("[briga] erro:", e)
 
     # MOVIMENTO: roda por frame, so no processo pai (evita duplicar nos filhos fogo/placa)
     if IS_PARENT and MOTION_ATIVO:
