@@ -2295,7 +2295,21 @@ def _busca_instant_query(camera_id, date, query, topk=24):
         return None
 
 
-def _busca_worker(job_id, camera_id, cam_nome, folder, date, segs, query, step):
+def _busca_instant_query_image(camera_id, date, image_b64, topk=24):
+    url = os.getenv("BUSCA_SVC_URL", "http://127.0.0.1:9765")
+    sec = os.getenv("BUSCA_SVC_SECRET", "")
+    try:
+        r = requests.post(url + "/query_image", timeout=30,
+                          headers={"X-Busca-Secret": sec, "Content-Type": "application/json"},
+                          json={"image_b64": image_b64, "camera_key": camera_id, "date": date, "topk": topk, "min_score": 0.0})
+        if r.status_code != 200:
+            return None
+        return r.json()
+    except Exception:
+        return None
+
+
+def _busca_worker(job_id, camera_id, cam_nome, folder, date, segs, query, step, image_b64=None):
     """Extrai quadros dos segmentos (ffmpeg via URL assinada) e consulta o VLM. Thread de fundo."""
     job = _BUSCA_JOBS.get(job_id)
     if not job:
@@ -2308,9 +2322,9 @@ def _busca_worker(job_id, camera_id, cam_nome, folder, date, segs, query, step):
     # === modo INSTANTANEO: tenta o indice CLIP (Xeon via tunel) antes do Nivel B ===
     try:
         _sel = set(a for a, _si in segs)
-        _inst = _busca_instant_query(camera_id, date, query, 24)
+        _inst = _busca_instant_query_image(camera_id, date, image_b64, 24) if image_b64 else _busca_instant_query(camera_id, date, query, 24)
         if _inst is not None and _inst.get("indexed") and _inst.get("results"):
-            _res = [r for r in _inst["results"] if r.get("arquivo") in _sel]
+            _res = _inst["results"] if image_b64 else [r for r in _inst["results"] if r.get("arquivo") in _sel]
             job["mode"] = "instant"
             job["total"] = len(_res)
 
@@ -2347,6 +2361,11 @@ def _busca_worker(job_id, camera_id, cam_nome, folder, date, segs, query, step):
             return
     except Exception:
         pass
+    if image_b64:
+        job["status"] = "done"
+        if not job.get("results"):
+            job["msgs"] = (job.get("msgs") or []) + ["essa camera/dia ainda nao esta indexada para busca por imagem"]
+        return
     # === fallback: Nivel B (VLM/Gemini) ===
     frames = []   # (frame_path, arquivo, offset_s, seg_inicio)
     for si, (arquivo, seg_inicio) in enumerate(segs):
@@ -2435,7 +2454,8 @@ async def busca_iniciar(req: Request):
     query = (b.get("query") or "").strip()[:300]
     precisao = (b.get("precisao") or "normal").strip()
     arquivos = b.get("arquivos") or []
-    if not query:
+    image_b64 = (b.get("image_b64") or "")
+    if not query and not image_b64:
         return JSONResponse({"error": "descreva o que procurar"}, status_code=400)
     if not (camera_id and data):
         return JSONResponse({"error": "camera/data faltando"}, status_code=400)
@@ -2460,15 +2480,15 @@ async def busca_iniciar(req: Request):
         segs.append((a, seg_inicio))
         if len(segs) >= _BUSCA_MAX_SEGMENTS:
             break
-    if not segs:
+    if not segs and not image_b64:
         return JSONResponse({"error": "selecione ao menos 1 trecho valido"}, status_code=400)
     step = _BUSCA_STEP.get(precisao, 3.0)
     job_id = secrets.token_hex(8)
     _BUSCA_JOBS[job_id] = {"user_id": u.get("id"), "status": "running", "processed": 0, "total": 0,
-                           "results": [], "created": time.time(), "query": query,
+                           "results": [], "created": time.time(), "query": (query or "[busca por imagem]"),
                            "cam_nome": cam.get("nome", ""), "msgs": [], "cancel": False, "fatal": None}
     threading.Thread(target=_busca_worker,
-                     args=(job_id, camera_id, cam.get("nome", ""), folder, data, segs, query, step),
+                     args=(job_id, camera_id, cam.get("nome", ""), folder, data, segs, query, step, image_b64),
                      daemon=True).start()
     return {"job_id": job_id, "trechos": len(segs)}
 

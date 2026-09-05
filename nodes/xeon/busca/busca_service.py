@@ -43,7 +43,11 @@ class H(BaseHTTPRequestHandler):
             self._send(400, {"error": "json invalido"})
             return
         try:
-            if self.path.startswith("/query"):
+            if self.path.startswith("/query_image"):
+                r = ci.query_image(body.get("image_b64", ""), body.get("camera_key", ""), body.get("date", ""),
+                             body.get("t0"), body.get("t1"), int(body.get("topk", 30)), float(body.get("min_score", 0.0)))
+                self._send(200, r)
+            elif self.path.startswith("/query"):
                 r = ci.query(body.get("text", ""), body.get("camera_key", ""), body.get("date", ""),
                              body.get("t0"), body.get("t1"), int(body.get("topk", 30)),
                              float(body.get("min_score", 0.0)))

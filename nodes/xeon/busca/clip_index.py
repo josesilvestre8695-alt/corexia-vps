@@ -2,7 +2,7 @@
 """Nucleo do indice CLIP (Fase 2 do 'Pergunte ao Corexia'). Roda na Xeon (GPU).
 Store por camera/data: <STORE>/<camera_key>/<date>.npy (Nx512 float32 normalizado)
 + <date>.jsonl (metadados por vetor) + <date>.done (arquivos ja indexados)."""
-import os, json, time, subprocess, glob, tempfile, shutil
+import os, json, time, subprocess, glob, tempfile, shutil, base64
 import numpy as np
 
 BASE = "/home/corexia/corexia-ia/busca"
@@ -110,6 +110,46 @@ def query(text, camera_key, date, t0=None, t1=None, topk=30, min_score=0.0):
     meta = [json.loads(l) for l in open(mj) if l.strip()]
     n = min(len(V), len(meta)); V = V[:n]; meta = meta[:n]
     q = embed_text(text)
+    sims = V.dot(q)
+    out = []
+    for idx in np.argsort(-sims):
+        m = meta[idx]
+        if t0 and m["ts"] < t0:
+            continue
+        if t1 and m["ts"] > t1:
+            continue
+        sc = float(sims[idx])
+        if sc < min_score:
+            break
+        out.append({"arquivo": m["arquivo"], "offset": m["offset"], "ts": m["ts"], "score": round(sc, 4)})
+        if len(out) >= topk:
+            break
+    return {"indexed": True, "count": n, "results": out}
+
+
+def embed_image_b64(b64):
+    raw = base64.b64decode(b64)
+    fd, path = tempfile.mkstemp(suffix=".jpg"); os.close(fd)
+    try:
+        with open(path, "wb") as f:
+            f.write(raw)
+        return embed_image(path)
+    finally:
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+
+
+def query_image(image_b64, camera_key, date, t0=None, t1=None, topk=30, min_score=0.0):
+    d = _cam_dir(camera_key)
+    npy = os.path.join(d, date + ".npy"); mj = os.path.join(d, date + ".jsonl")
+    if not (os.path.exists(npy) and os.path.exists(mj)):
+        return {"indexed": False, "results": []}
+    V = np.load(npy)
+    meta = [json.loads(l) for l in open(mj) if l.strip()]
+    n = min(len(V), len(meta)); V = V[:n]; meta = meta[:n]
+    q = embed_image_b64(image_b64)
     sims = V.dot(q)
     out = []
     for idx in np.argsort(-sims):

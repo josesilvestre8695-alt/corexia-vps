@@ -1064,6 +1064,11 @@ _BUSCA_BODY = """
  <span class="bx-chip" onclick="$('b_q').value=this.getAttribute('data-q');$('b_q').focus()" data-q="pessoa com capacete">pessoa com capacete</span>
 </div>
 
+<div class="bx-imgrow" style="margin:-6px 0 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+ <input type="file" id="b_img" accept="image/*" style="display:none" onchange="buscarImg()">
+ <button onclick="$('b_img').click()">📷 Buscar por imagem</button>
+ <span class="bx-muted">Suba um logo/objeto/veiculo — escolha a camera e o dia, e a IA acha tudo parecido (com score).</span>
+</div>
 <div id="b_prog" class="bx-prog"></div>
 <div id="b_res" class="bx-grid"></div>
 
@@ -1158,6 +1163,22 @@ async function buscar(){
   try{ var r=await api('POST','/api/busca/iniciar',{camera_id:id,data:data,arquivos:arqs,query:q,precisao:prec}); JOB=r.job_id; }
   catch(e){ $('b_prog').innerHTML=''; msg('Erro: '+(e&&e.message||e)); return; }
   poll();
+}
+async function buscarImg(){
+  var f=$('b_img').files[0]; if(!f)return;
+  var id=$('b_cam').value, data=$('b_dia').value;
+  if(!id||!data){ msg('Escolha a camera e o dia primeiro.'); $('b_img').value=''; return; }
+  var rd=new FileReader();
+  rd.onload=async function(){
+    var b64=(''+(rd.result||'')).split(',')[1]||'';
+    if(!b64){ msg('Nao consegui ler a imagem.'); return; }
+    stopPoll(); $('b_res').innerHTML=''; RENDERED=0;
+    $('b_prog').innerHTML='<div class="bx-run"><span class="bx-spin"></span> Buscando por imagem...</div>';
+    try{ var r=await api('POST','/api/busca/iniciar',{camera_id:id,data:data,arquivos:selArquivos(),image_b64:b64}); JOB=r.job_id; poll(); }
+    catch(e){ $('b_prog').innerHTML=''; msg('Erro: '+(e&&e.message||e)); }
+  };
+  rd.onerror=function(){ msg('Erro ao ler a imagem.'); };
+  rd.readAsDataURL(f); $('b_img').value='';
 }
 function stopPoll(){ if(POLL){ clearTimeout(POLL); POLL=null; } }
 async function poll(){
