@@ -260,12 +260,17 @@ def gemini_balaclava(crop_jpg, nome):
     global _gem_fails, _gem_open_until, _gem_down
     if _gem_open_until and time.time() < _gem_open_until:
         return "nenhum", ""
-    prompt = ('Camera de seguranca "' + str(nome) + '". A imagem e o RECORTE da cabeca/rosto de uma pessoa. '
-              'Classifique o que cobre o rosto/cabeca em UMA categoria: '
-              '"balaclava" = touca ninja, mascara de esqui, pano ou capuz cobrindo o rosto para OCULTAR a identidade (tipico de assalto a pe). '
-              '"capacete" = CAPACETE DE MOTO / motociclista (casco rigido, com viseira), incluindo capacete integral fechado. '
-              '"nenhum" = rosto visivel, oculos ou oculos escuros, bone ou chapeu, mascara cirurgica comum, ou capuz SEM mascara. '
-              'IMPORTANTE: diferencie bem CAPACETE DE MOTO (casco rigido, viseira) de BALACLAVA (tecido macio) — nao confunda. '
+    prompt = ('Camera de seguranca "' + str(nome) + '". A imagem mostra uma pessoa; foque no ROSTO dela. '
+              'Classifique em UMA categoria: '
+              '"balaclava" = SOMENTE se voce tiver CERTEZA de que ha um TECIDO/pano (touca ninja, mascara de esqui, '
+              'pano amarrado) cobrindo INTENCIONALMENTE a maior parte do rosto (boca E nariz) para ocultar a '
+              'identidade, tipico de assalto. '
+              '"capacete" = capacete de moto/motociclista (casco rigido com viseira). '
+              '"nenhum" = rosto visivel (mesmo parcial), CABELO sobre o rosto, pessoa olhando para BAIXO/de lado/de '
+              'costas, sombra, boné, chapeu, capuz SEM mascara, oculos, mascara cirurgica, CRIANCA, ou imagem '
+              'pequena/ambigua. '
+              'REGRA: na MENOR duvida responda "nenhum". Cabelo escuro, sombra ou cabeca baixa NAO sao balaclava. '
+              'Se estiver em moto/bicicleta e CAPACETE. '
               'Responda SO JSON: {"tipo": "balaclava|capacete|nenhum", "descricao": "1 frase"}')
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_KEY}"
     try:
@@ -438,6 +443,8 @@ _CFG_ALIASES = {
     "queda":       ("queda", "pessoa_caida", "caido"),
     "aglomeracao": ("aglomeracao", "aglomeração", "multidao", "tumulto"),
     "briga":       ("briga", "brigas", "agressao", "luta"),
+    "crianca_elevador": ("crianca_elevador", "lei_miguel"),
+    "crianca_sozinha": ("crianca_sozinha", "crianca_desacompanhada", "menor_sozinho"),
 }
 
 # vocabulario da tela -> model_id(s) necessarios (carga/execucao ON-DEMAND por camera)
@@ -457,6 +464,8 @@ _VOCAB_MODEL = {
     "queda": (MODEL_ID_GENERAL,),  # pessoa caida/queda: COCO (pessoa) + Gemini
     "aglomeracao": (MODEL_ID_GENERAL,),  # conta pessoas (COCO)
     "briga": (MODEL_ID_GENERAL,),  # pessoas proximas + movimento -> Gemini
+    "crianca_elevador": (MODEL_ID_GENERAL,),  # Lei Miguel: COCO (pessoa) + Gemini
+    "crianca_sozinha": (MODEL_ID_GENERAL,),  # crianca desacompanhada >=30s: COCO + Gemini
     "facial": (MODEL_ID_GENERAL,),  # controle de acesso: COCO so p/ a camera ser processada; recon = YuNet+SFace em _facial_check
     "guarda_piscina": (MODEL_ID_GENERAL,),  # guarda-piscina: COCO (pessoa/animal) na agua quando ARMADO
     "suspeito": (MODEL_ID_GENERAL,),  # detector de suspeitos: COCO (pessoa) -> merodeio/permanencia
@@ -678,6 +687,25 @@ BALA_CHECK_SEC = int(os.getenv("BALA_CHECK_SEC", "25"))   # intervalo minimo ent
 BALA_COOLDOWN  = int(os.getenv("BALA_COOLDOWN", "120"))   # cooldown do alerta/cam
 
 
+def _moto_perto(preds, W, H, p):
+    """True se ha moto/bicicleta sobrepondo/colada na pessoa (=> motociclista => capacete, nunca balaclava)."""
+    try:
+        px = float(p.get("x", 0)); py = float(p.get("y", 0)); pw = float(p.get("width", 0)); ph = float(p.get("height", 0))
+    except Exception:
+        return False
+    pa = (px - pw / 2, py - ph / 2, px + pw / 2, py + ph / 2)
+    ref = max(pw, ph) * 1.4 + 1.0
+    for d in (preds or []):
+        if str(d.get("class", "")).lower() not in ("motorcycle", "motorbike", "bicycle", "bike", "scooter"):
+            continue
+        mx = float(d.get("x", 0)); my = float(d.get("y", 0)); mw = float(d.get("width", 0)); mh = float(d.get("height", 0))
+        mb = (mx - mw / 2, my - mh / 2, mx + mw / 2, my + mh / 2)
+        overlap = not (pa[2] < mb[0] or mb[2] < pa[0] or pa[3] < mb[1] or mb[3] < pa[1])
+        if overlap or (((px - mx) ** 2 + (py - my) ** 2) ** 0.5) <= ref:
+            return True
+    return False
+
+
 def _balaclava_check(cam, predictions, frame_bgr, now):
     if frame_bgr is None:
         return
@@ -696,8 +724,8 @@ def _balaclava_check(cam, predictions, frame_bgr, now):
     _bala_check[cid] = now
     p = max(pts, key=lambda t: float(t[2].get("width", 0)) * float(t[2].get("height", 0)))[2]  # maior pessoa
     x = float(p.get("x", 0)); y = float(p.get("y", 0)); w = float(p.get("width", 0)); h = float(p.get("height", 0))
-    x1 = int(max(0, x - w * 0.55)); x2 = int(min(W, x + w * 0.55))
-    y1 = int(max(0, y - h * 0.55)); y2 = int(min(H, y - h * 0.05))   # topo ~45% do box = cabeca
+    x1 = int(max(0, x - w * 0.75)); x2 = int(min(W, x + w * 0.75))
+    y1 = int(max(0, y - h * 0.62)); y2 = int(min(H, y + h * 0.62))   # pessoa inteira + contexto (reduz alucinacao)
     if x2 - x1 < 24 or y2 - y1 < 24:
         return
     try:
@@ -707,6 +735,8 @@ def _balaclava_check(cam, predictions, frame_bgr, now):
         tipo, desc = gemini_balaclava(buf.tobytes(), cam.get("nome", ""))
     except Exception as e:
         print("[bala] erro:", e); return
+    if tipo == "balaclava" and _moto_perto(preds, W, H, p):
+        tipo = "capacete"; desc = "motociclista (capacete): " + (desc or "")
     # roteia: balaclava -> toca_ninja ; capacete -> capacete (moto). Capacete NUNCA dispara toca_ninja.
     if tipo == "balaclava" and toca_on:
         alerta_tipo = "toca_ninja"; texto = "Pessoa com rosto coberto (touca ninja): " + (desc or "")
@@ -1662,6 +1692,182 @@ def _briga_check(cam, predictions, frame_bgr, now):
     envia_alerta(cam, "briga", 0.85, "POSSIVEL BRIGA / AGRESSAO: " + (desc or "pessoas em conflito") + tag, img_b64, verificado=verif)
 
 
+# ==================== LEI MIGUEL — CRIANCA SOZINHA NO ELEVADOR ====================
+_leim = {}
+_leim_ultimo = {}
+LEIM_CHECK_SEC = int(os.getenv("LEIM_CHECK_SEC", "8"))     # intervalo min entre chamadas ao Gemini/cam
+LEIM_COOLDOWN  = int(os.getenv("LEIM_COOLDOWN", "120"))    # cooldown do alerta/cam
+LEIM_MAXP      = int(os.getenv("LEIM_MAXP", "2"))          # > que isso = grupo, nao e "crianca sozinha"
+
+
+def gemini_crianca_elevador(jpg, nome):
+    """True se ha crianca (~<=12) sozinha no elevador, SEM adulto. Fail-closed."""
+    if not USE_GEMINI or not GEMINI_KEY or not jpg:
+        return False, ""
+    global _gem_fails, _gem_open_until, _gem_down
+    if _gem_open_until and time.time() < _gem_open_until:
+        return False, ""
+    prompt = ('Camera de seguranca DENTRO de um ELEVADOR ("' + str(nome) + '"). '
+              'Ha uma CRIANCA (aparentando ate ~12 anos) SOZINHA no elevador, SEM nenhum ADULTO junto? '
+              'Considere "sozinha" tambem se houver apenas criancas e NENHUM adulto. '
+              'Responda false se: houver qualquer ADULTO ou adolescente mais velho presente, a pessoa for '
+              'claramente adulto/adolescente, o elevador estiver vazio, ou voce tiver duvida. '
+              'Na duvida responda SEMPRE false. '
+              'Responda SO JSON: {"crianca_sozinha": true/false, "descricao": "1 frase"}')
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_KEY}"
+    try:
+        r = requests.post(url, timeout=20, json={
+            "contents": [{"parts": [{"text": prompt},
+                          {"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(jpg).decode()}}]}],
+            "generationConfig": {"response_mime_type": "application/json", "temperature": 0}})
+        if r.status_code == 429:
+            raise RuntimeError("429")
+        d = json.loads(r.json()["candidates"][0]["content"]["parts"][0]["text"])
+        _gem_fails = 0; _gem_open_until = 0.0; _gem_down = False
+        return bool(d.get("crianca_sozinha")), d.get("descricao", "")
+    except Exception as e:
+        _gem_fails += 1
+        if ("429" in str(e)) or _gem_fails >= GEMINI_CB_FAILS:
+            _gem_open_until = time.time() + GEMINI_CB_COOLDOWN; _gem_down = True
+        return False, ""
+
+
+def _lei_miguel_check(cam, predictions, frame_bgr, now):
+    if frame_bgr is None or not _tipo_ativo_na_cam(cam, "crianca_elevador", now):
+        return
+    preds = predictions.get("predictions", []) if isinstance(predictions, dict) else []
+    H, W = frame_bgr.shape[:2]
+    pts = _person_pts(preds, W, H)
+    n = len(pts)
+    if n < 1 or n > LEIM_MAXP:      # vazio, ou grupo (nao e cenario de crianca sozinha)
+        return
+    cid = cam.get("id"); st = _leim.get(cid) or {}
+    if now - float(st.get("last_check", 0)) < LEIM_CHECK_SEC:
+        return
+    _leim[cid] = {"last_check": now}
+    try:
+        ok, buf = cv2.imencode(".jpg", frame_bgr)
+        if not ok:
+            return
+        crianca, desc = gemini_crianca_elevador(buf.tobytes(), cam.get("nome", ""))
+    except Exception as e:
+        print("[leimiguel] erro:", e); return
+    if not crianca or (now - _leim_ultimo.get(cid, 0) < LEIM_COOLDOWN):
+        return
+    _leim_ultimo[cid] = now
+    img_b64 = None
+    try:
+        an = frame_bgr.copy()
+        for (fx, fy, p) in pts:
+            x = float(p.get("x", 0)); y = float(p.get("y", 0)); w = float(p.get("width", 0)); h = float(p.get("height", 0))
+            cv2.rectangle(an, (int(x - w / 2), int(y - h / 2)), (int(x + w / 2), int(y + h / 2)), (0, 0, 255), 2)
+        cv2.putText(an, "CRIANCA SOZINHA?", (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+        okA, bufA = cv2.imencode(".jpg", an)
+        if okA:
+            img_b64 = base64.b64encode(bufA.tobytes()).decode()
+    except Exception:
+        pass
+    print("[leimiguel] %s: crianca sozinha - %s" % (cam.get("nome", ""), desc))
+    envia_alerta(cam, "crianca_elevador", 0.9, "CRIANCA SOZINHA NO ELEVADOR (Lei Miguel): " + (desc or "crianca desacompanhada"), img_b64, verificado=True)
+
+
+# ==================== CRIANCA SOZINHA (area) — desacompanhada por >= N segundos ====================
+_cs = {}
+_cs_ultimo = {}
+CS_DWELL_SEC = int(os.getenv("CS_DWELL_SEC", "30"))    # sozinha por >= Xs antes de alertar
+CS_CHECK_SEC = int(os.getenv("CS_CHECK_SEC", "8"))     # intervalo min entre chamadas ao Gemini/cam
+CS_COOLDOWN  = int(os.getenv("CS_COOLDOWN", "180"))    # cooldown do alerta/cam
+CS_GAP       = int(os.getenv("CS_GAP", "5"))           # tolera sumico curto sem zerar o cronometro
+CS_MAXP      = int(os.getenv("CS_MAXP", "2"))          # > que isso = grupo, nao e "sozinha"
+
+
+def gemini_crianca_sozinha(jpg, nome):
+    """True se ha crianca (~<=12) desacompanhada (sem adulto por perto) na cena. Fail-closed."""
+    if not USE_GEMINI or not GEMINI_KEY or not jpg:
+        return False, ""
+    global _gem_fails, _gem_open_until, _gem_down
+    if _gem_open_until and time.time() < _gem_open_until:
+        return False, ""
+    prompt = ('Camera de seguranca "' + str(nome) + '". Foco: SEGURANCA INFANTIL. '
+              'Ha uma CRIANCA (aparentando ate ~12 anos) SOZINHA / desacompanhada, SEM nenhum ADULTO por perto '
+              'cuidando dela, nesta cena? Considere sozinha tambem se houver apenas criancas e NENHUM adulto. '
+              'Responda false se: houver um ADULTO por perto, a pessoa for claramente adulto/adolescente mais velho, '
+              'a cena estiver vazia, ou voce tiver duvida. Na duvida responda SEMPRE false. '
+              'Responda SO JSON: {"crianca_sozinha": true/false, "descricao": "1 frase"}')
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_KEY}"
+    try:
+        r = requests.post(url, timeout=20, json={
+            "contents": [{"parts": [{"text": prompt},
+                          {"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(jpg).decode()}}]}],
+            "generationConfig": {"response_mime_type": "application/json", "temperature": 0}})
+        if r.status_code == 429:
+            raise RuntimeError("429")
+        d = json.loads(r.json()["candidates"][0]["content"]["parts"][0]["text"])
+        _gem_fails = 0; _gem_open_until = 0.0; _gem_down = False
+        return bool(d.get("crianca_sozinha")), d.get("descricao", "")
+    except Exception as e:
+        _gem_fails += 1
+        if ("429" in str(e)) or _gem_fails >= GEMINI_CB_FAILS:
+            _gem_open_until = time.time() + GEMINI_CB_COOLDOWN; _gem_down = True
+        return False, ""
+
+
+def _crianca_sozinha_check(cam, predictions, frame_bgr, now):
+    if frame_bgr is None or not _tipo_ativo_na_cam(cam, "crianca_sozinha", now):
+        return
+    preds = predictions.get("predictions", []) if isinstance(predictions, dict) else []
+    H, W = frame_bgr.shape[:2]
+    area = None
+    for z in (cam.get("config_analitico") or {}).get("zonas_intrusao", []) or []:
+        if z.get("tipo") in ("zona", "vigilancia") and len(z.get("pontos") or []) >= 3:
+            area = z["pontos"]; break
+    pts = _person_pts(preds, W, H)
+    if area:
+        pts = [(fx, fy, p) for (fx, fy, p) in pts if _pt_in_poly(fx, fy, area)]
+    n = len(pts)
+    cid = cam.get("id"); st = _cs.get(cid) or {}
+    if n < 1 or n > CS_MAXP:      # vazio ou grupo -> mantem no gap curto, senao zera
+        if st.get("since") and (now - float(st.get("last_seen", 0))) <= CS_GAP:
+            _cs[cid] = st
+        else:
+            _cs[cid] = {"since": 0}
+        return
+    since = st.get("since") or now
+    _cs[cid] = {"since": since, "last_seen": now, "last_check": float(st.get("last_check", 0))}
+    if (now - since) < CS_DWELL_SEC:
+        return
+    if now - float(_cs[cid].get("last_check", 0)) < CS_CHECK_SEC:
+        return
+    _cs[cid]["last_check"] = now
+    try:
+        ok, buf = cv2.imencode(".jpg", frame_bgr)
+        if not ok:
+            return
+        crianca, desc = gemini_crianca_sozinha(buf.tobytes(), cam.get("nome", ""))
+    except Exception as e:
+        print("[crsozinha] erro:", e); return
+    if not crianca or (now - _cs_ultimo.get(cid, 0) < CS_COOLDOWN):
+        return
+    _cs_ultimo[cid] = now
+    img_b64 = None
+    try:
+        an = frame_bgr.copy()
+        if area:
+            import numpy as _np
+            cv2.polylines(an, [_np.array([(int(qx * W), int(qy * H)) for qx, qy in area], dtype=_np.int32)], True, (0, 165, 255), 2)
+        for (fx, fy, p) in pts:
+            x = float(p.get("x", 0)); y = float(p.get("y", 0)); w = float(p.get("width", 0)); h = float(p.get("height", 0))
+            cv2.rectangle(an, (int(x - w / 2), int(y - h / 2)), (int(x + w / 2), int(y + h / 2)), (0, 0, 255), 2)
+        cv2.putText(an, "CRIANCA SOZINHA (%ds)" % int(now - since), (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+        okA, bufA = cv2.imencode(".jpg", an)
+        if okA:
+            img_b64 = base64.b64encode(bufA.tobytes()).decode()
+    except Exception:
+        pass
+    print("[crsozinha] %s: crianca sozinha ~%ds - %s" % (cam.get("nome", ""), int(now - since), desc))
+    envia_alerta(cam, "crianca_sozinha", 0.9, "CRIANCA SOZINHA (>= %ds, desacompanhada): " % CS_DWELL_SEC + (desc or "crianca sem adulto por perto"), img_b64, verificado=True)
+
+
 def _facial_check(cam, frame_bgr, now):
     """Controle de acesso facial: detecta TODOS os rostos >= FACIAL_MIN_PX, compara com a galeria
     da camera; confirma em varios quadros; reconhecido -> registra; desconhecido -> alerta plantao."""
@@ -1778,6 +1984,16 @@ def _process(predictions, video_frame):
         _briga_check(cam, predictions, video_frame.image, time.time())
     except Exception as e:
         print("[briga] erro:", e)
+    # LEI MIGUEL: crianca sozinha no elevador
+    try:
+        _lei_miguel_check(cam, predictions, video_frame.image, time.time())
+    except Exception as e:
+        print("[leimiguel] erro:", e)
+    # CRIANCA SOZINHA (area, >=30s)
+    try:
+        _crianca_sozinha_check(cam, predictions, video_frame.image, time.time())
+    except Exception as e:
+        print("[crsozinha] erro:", e)
 
     # MOVIMENTO: roda por frame, so no processo pai (evita duplicar nos filhos fogo/placa)
     if IS_PARENT and MOTION_ATIVO:

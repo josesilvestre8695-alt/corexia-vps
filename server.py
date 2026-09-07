@@ -82,7 +82,7 @@ TIPO_EMOJI = {"fogo":"🔥","arma_fogo":"🔫","arma_branca":"🔪","placa":"�
 TIPO_LABEL = {"fogo":"FOGO / FUMACA DETECTADO","arma_fogo":"ARMA DE FOGO DETECTADA",
               "arma_branca":"ARMA BRANCA DETECTADA","placa":"PLACA DETECTADA",
               "movimento":"MOVIMENTO DETECTADO","intruso":"INTRUSO DETECTADO",
-              "aglomeracao":"AGLOMERACAO DETECTADA","toca_ninja":"ROSTO COBERTO (TOCA NINJA)","capacete":"CAPACETE / MOTO","queda":"POSSIVEL QUEDA (PESSOA CAIDA)","briga":"POSSIVEL BRIGA / AGRESSAO","outro":"ALERTA DE SEGURANCA"}
+              "aglomeracao":"AGLOMERACAO DETECTADA","toca_ninja":"ROSTO COBERTO (TOCA NINJA)","capacete":"CAPACETE / MOTO","queda":"POSSIVEL QUEDA (PESSOA CAIDA)","briga":"POSSIVEL BRIGA / AGRESSAO","crianca_elevador":"CRIANCA SOZINHA NO ELEVADOR (LEI MIGUEL)","crianca_sozinha":"CRIANCA SOZINHA (DESACOMPANHADA)","outro":"ALERTA DE SEGURANCA"}
 
 
 def db():
