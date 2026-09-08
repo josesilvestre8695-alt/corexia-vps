@@ -73,7 +73,7 @@ def _parse_map(env, default):
             try: out[k.strip()] = float(v.strip().replace(",", "."))
             except ValueError: pass
     return out
-TIPO_CONF    = _parse_map("TIPO_CONF", {"arma_fogo": 0.65, "arma_branca": 0.30, "fogo": 0.60, "placa": 0.50,
+TIPO_CONF    = _parse_map("TIPO_CONF", {"arma_fogo": 0.65, "arma_branca": 0.50, "fogo": 0.60, "placa": 0.50,
                                         "pessoa": 0.50, "veiculo": 0.50, "animal": 0.45, "epi": 0.45})
 # limiar extra POR CLASSE do modelo: alavanca de cadeira = "Shotgun 84%" (frame-prova);
 # arma LONGA em ambiente interno exige quase-certeza — pistola (handgun) continua no limiar do tipo
@@ -173,7 +173,7 @@ lbl_ann = sv.LabelAnnotator(text_scale=0.7, text_thickness=2)
 # termos HUMANOS pro Gemini (e instrucao de julgar PRESENCA, nao intencao/perigo)
 TIPO_TERMO = {
     "arma_fogo":   "uma ARMA DE FOGO (pistola, revolver, espingarda ou fuzil)",
-    "arma_branca": "uma FACA ou outro objeto cortante (arma branca)",
+    "arma_branca": "uma FACA / LAMINA cortante (arma branca)",
     "fogo":        "FOGO / chamas reais",
     "placa":       "uma PLACA veicular",
 }
@@ -209,6 +209,8 @@ def gemini_confirma(jpg, nome, tipo, jpg_crop=None):
                " CRITICO p/ FOGO: confirme SOMENTE se houver CHAMAS visiveis ou FUMACA de um "
                "incendio REAL. Objeto/parede/roupa/telhado/luz/LED/placa vermelha, reflexo, "
                "lampada, por-do-sol ou logo colorido NAO sao fogo -> responda false.")
+    if tipo == "arma_branca":
+        reforco = (" CRITICO p/ ARMA BRANCA: confirme (true) SOMENTE se houver uma FACA, LAMINA ou FACAO CLARAMENTE e INEQUIVOCAMENTE visivel (gume/lamina metalica reconhecivel), em geral empunhada por uma pessoa. Responda FALSE se o objeto for AMBIGUO ou se a melhor descricao usar possivelmente/talvez/parece/semelhante a/pode ser. Tambem FALSE para: ferramenta generica, cabo/vareta/vassoura/pau, objeto longo-fino-ou-curvo indefinido, guiador ou pecas de MOTO/BICICLETA, objeto carregado por ciclista, celular, controle, garrafa, sombra ou reflexo. Na MENOR duvida = false.")
     prompt = (f'Camera de seguranca "{nome}". O detector de objetos marcou {termo} '
               'na regiao da CAIXA VERMELHA da 1a imagem'
               + (' (a 2a imagem e o RECORTE AMPLIADO dessa regiao — examine-a com atencao)' if jpg_crop is not None else '')
@@ -231,7 +233,12 @@ def gemini_confirma(jpg, nome, tipo, jpg_crop=None):
         if _gem_down:
             print("[gemini] verificador VOLTOU — circuito fechado", flush=True)
         _gem_fails = 0; _gem_open_until = 0.0; _gem_down = False   # sucesso fecha o circuito
-        return bool(d.get("confirmado")), d.get("descricao", f"{tipo} detectado")
+        _conf_ok = bool(d.get("confirmado")); _desc = d.get("descricao", f"{tipo} detectado")
+        if tipo == "arma_branca" and _conf_ok:
+            _dl = (_desc or "").lower()
+            if any(h in _dl for h in ("possiv", "talvez", "provav", "pode ser", "parece", "aparenta", "semelhante", "similar", "ferrament", "objeto long", "indefinid")):
+                _conf_ok = False; _desc = "arma_branca rejeitada (descricao ambigua): " + (_desc or "")[:70]
+        return _conf_ok, _desc
     except Exception as e:
         _gem_fails += 1
         sistemico = ("429" in str(e)) or _gem_fails >= GEMINI_CB_FAILS

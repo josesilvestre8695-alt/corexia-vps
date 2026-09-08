@@ -32,6 +32,9 @@ button{font-family:inherit;cursor:pointer}
 .tile .thumb .stat::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
 .tile .thumb .stat.on{color:#34d399;border-color:rgba(52,211,153,.5)}
 .tile .thumb .stat.off{color:#f87171;border-color:rgba(248,113,113,.5)}
+.tile.offline .thumb img{filter:grayscale(1) brightness(.42)}
+.tile.offline .thumb .play,.tile.offline .thumb .ph{display:none}
+.tile.offline .thumb::after{content:"OFFLINE";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:3;color:#fca5a5;font-weight:800;font-size:14px;letter-spacing:2px;text-shadow:0 1px 4px rgba(0,0,0,.85)}
 .tile .nm{padding:8px 11px;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
 .lgrid.one{grid-template-columns:1fr}
@@ -562,8 +565,9 @@ button{font-family:inherit;cursor:pointer}
     api('GET','/api/portal/cameras-status').then(function(m){ m=m||{};
       Array.prototype.forEach.call(document.querySelectorAll('.tile .stat[data-st]'),function(el){
         var on=m[el.getAttribute('data-st')];
-        if(on===true){ el.className='stat on'; el.textContent='online'; }
-        else if(on===false){ el.className='stat off'; el.textContent='offline'; }
+        var _tile=el.closest?el.closest('.tile'):null;
+        if(on===true){ el.className='stat on'; el.textContent='online'; if(_tile)_tile.classList.remove('offline'); }
+        else if(on===false){ el.className='stat off'; el.textContent='offline'; if(_tile)_tile.classList.add('offline'); }
       });
       if(TAB==='cam' && CAMS.length){ var onc=CAMS.filter(function(c){return m[c.id]===true;}).length; $('count').textContent=CAMS.length+' câmera'+(CAMS.length>1?'s':'')+' · '+onc+' online'; }
     }).catch(function(){});
