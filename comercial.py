@@ -2181,7 +2181,8 @@ _PROV_EQUIPE_BODY = """
  <div class="fld"><label>Nome</label><input id="n_nome"></div>
  <div class="fld"><label>E-mail (login)</label><input id="n_email" type="email"></div>
  <div class="fld"><label>Senha</label><div style="display:flex;gap:8px"><input id="n_senha" style="flex:1"><button class="act" type="button" onclick="genPw()">gerar</button></div></div>
- <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px"><button onclick="fecha('ovnew')">Cancelar</button><button class="btn-primary" onclick="criar()">Criar e definir permissoes</button></div>
+ <div class="fld"><label style="display:flex;justify-content:space-between;align-items:center;gap:8px">Menus que este usuario pode acessar<span style="font-weight:400"><a href="#" onclick="markAll(true);return false" style="color:#f59e0b;text-decoration:none">marcar todos</a> &middot; <a href="#" onclick="markAll(false);return false" style="color:var(--muted);text-decoration:none">limpar</a></span></label><div id="newperm" style="max-height:230px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:2px 8px"></div></div>
+ <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px"><button onclick="fecha('ovnew')">Cancelar</button><button class="btn-primary" onclick="criar()">Criar usuario</button></div>
 </div></div>
 
 <div class="ovd" id="ovperm"><div class="ovdbox" style="max-width:520px">
@@ -2218,12 +2219,15 @@ function render(){ var to=0,at=0,bl=0; USERS.forEach(function(u){ if(u.owner)ret
    '<button class="act" data-tog="'+esc(u.id)+'" style="color:'+(u.status==='ativo'?'var(--bad)':'var(--ok)')+'">'+(u.status==='ativo'?'bloquear':'ativar')+'</button>'+
    '<button class="act" data-del="'+esc(u.id)+'" style="color:var(--bad)">excluir</button></td></tr>';
  }).join('')||'<tr><td colspan="4" class="center">Nenhum usuario de equipe. Clique em Novo Usuario.</td></tr>'; }
-function abreNovo(){ $('n_nome').value=''; $('n_email').value=''; $('n_senha').value=''; $('ovnew').classList.add('open'); }
+function abreNovo(){ $('n_nome').value=''; $('n_email').value=''; $('n_senha').value=''; $('newperm').innerHTML=MENUS.map(function(m){ return '<label class="prow"><input type="checkbox" data-slug="'+esc(m.slug)+'" style="width:auto"> '+esc(m.label)+'</label>'; }).join('')||'<div style="color:var(--muted);font-size:12px;padding:8px">Sem menus disponiveis.</div>'; $('ovnew').classList.add('open'); }
+function markAll(on){ var ck=$('newperm').querySelectorAll('input[type=checkbox]'); for(var i=0;i<ck.length;i++)ck[i].checked=on; }
 function fecha(id){ $(id).classList.remove('open'); }
 function genPw(){ $('n_senha').value='Eq'+Math.floor(100000+Math.random()*900000); }
-async function criar(){ var b={full_name:$('n_nome').value.trim(),email:$('n_email').value.trim(),password:$('n_senha').value,menu_perms:['']};
+async function criar(){ var ck=$('newperm').querySelectorAll('input[type=checkbox]'); var perms=[]; for(var i=0;i<ck.length;i++){ if(ck[i].checked)perms.push(ck[i].getAttribute('data-slug')); }
+ var b={full_name:$('n_nome').value.trim(),email:$('n_email').value.trim(),password:$('n_senha').value,menu_perms:perms};
  if(!b.full_name||!b.email||(''+b.password).length<4){ msg('Preencha nome, e-mail e senha (min 4).'); return; }
- try{ var r=await api('POST','/api/prov/equipe/criar',b); fecha('ovnew'); msg('Usuario criado. Agora defina as permissoes.',true); await lista(); abrePerm(r.id); }catch(e){ msg('Erro: '+e.message); } }
+ if(!perms.length && !confirm('Nenhum menu marcado. O usuario vera apenas a Ajuda. Criar assim mesmo?')) return;
+ try{ var r=await api('POST','/api/prov/equipe/criar',b); fecha('ovnew'); msg('Usuario criado com os menus selecionados.',true); lista(); }catch(e){ msg('Erro: '+e.message); } }
 function abrePerm(uid){ var u=USERS.filter(function(x){return x.id===uid})[0]; if(!u)return; curUid=uid;
  $('perm_nome').textContent=(u.full_name||'')+' - '+(u.email||''); var sel=u.menu_perms||[];
  $('permlist').innerHTML=MENUS.map(function(m){ var c=sel.indexOf(m.slug)>=0; return '<label class="prow"><input type="checkbox" data-slug="'+esc(m.slug)+'" '+(c?'checked':'')+' style="width:auto"> '+esc(m.label)+'</label>'; }).join('');
@@ -2247,7 +2251,8 @@ def prov_menus(req: Request):
     u, pid = _prov_req(req)
     if not pid:
         return JSONResponse({"error": "sem permissao"}, status_code=403)
-    return [{"slug": s, "label": l} for s, l, _t in _PROV_ITENS if s != "gestao-usuarios"]
+    itens = _prov_itens_for(req)
+    return [{"slug": it[0], "label": it[1]} for it in itens if it[0] not in ("gestao-usuarios", "ajuda")]
 
 
 @router.get("/provedor/gestao-usuarios")

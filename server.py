@@ -1595,6 +1595,116 @@ def _send_push(user_ids, title, body, url="/", tag="corexia-alerta"):
 async def push_config():
     return {"vapid_public": VAPID_PUBLIC, "enabled": bool(VAPID_PUBLIC and os.path.exists(VAPID_PRIV))}
 
+# ==================== PUSH NATIVO (APP Nuvemprime iOS/Android) — APNs ====================
+APNS_KEY_ID   = os.getenv("APNS_KEY_ID", "")
+APNS_TEAM_ID  = os.getenv("APNS_TEAM_ID", "")
+APNS_BUNDLE   = os.getenv("APNS_BUNDLE", "com.nuvemprime.app")
+APNS_KEY_PATH = os.getenv("APNS_KEY_PATH", os.path.join(HERE, "apns_key.p8"))
+APNS_ENV      = os.getenv("APNS_ENV", "sandbox")   # 'sandbox' = build rodado do Xcode; 'prod' = TestFlight/loja
+_apns_jwt_cache = {"tok": "", "ts": 0.0}
+
+
+def _ensure_push_tokens():
+    c = db()
+    c.execute("CREATE TABLE IF NOT EXISTS push_tokens (token TEXT PRIMARY KEY, platform TEXT, user_id TEXT, created TEXT, updated TEXT)")
+    c.commit(); c.close()
+
+
+def _apns_host():
+    return "api.push.apple.com" if APNS_ENV == "prod" else "api.sandbox.push.apple.com"
+
+
+def _apns_jwt():
+    now = time.time()
+    if _apns_jwt_cache["tok"] and (now - _apns_jwt_cache["ts"] < 2400):
+        return _apns_jwt_cache["tok"]
+    if not (APNS_KEY_ID and APNS_TEAM_ID and os.path.exists(APNS_KEY_PATH)):
+        return ""
+    try:
+        import jwt as _pyjwt
+        with open(APNS_KEY_PATH) as f:
+            key = f.read()
+        tok = _pyjwt.encode({"iss": APNS_TEAM_ID, "iat": int(now)}, key,
+                            algorithm="ES256", headers={"kid": APNS_KEY_ID})
+        _apns_jwt_cache["tok"] = tok; _apns_jwt_cache["ts"] = now
+        return tok
+    except Exception as e:
+        print("[apns] jwt erro:", e); return ""
+
+
+def _send_push_native(user_ids, title, body, data=None):
+    """Envia push nativo (APNs) aos tokens dos usuarios. Retorna quantos enviados."""
+    if not user_ids:
+        return 0
+    _ensure_push_tokens()
+    c = db()
+    qs = ",".join("?" * len(user_ids))
+    rows = c.execute("SELECT token, platform FROM push_tokens WHERE user_id IN (%s)" % qs, tuple(user_ids)).fetchall()
+    c.close()
+    if not rows:
+        return 0
+    ios = [r["token"] for r in rows if (r["platform"] or "ios") == "ios"]
+    n = 0; mortos = []
+    if ios:
+        jt = _apns_jwt()
+        if not jt:
+            print("[apns] nao configurado (APNS_KEY_ID/TEAM_ID/apns_key.p8)")
+        else:
+            try:
+                import httpx
+                payload = {"aps": {"alert": {"title": title, "body": body}, "sound": "default"}}
+                if data:
+                    payload.update(data)
+                hdr = {"authorization": "bearer " + jt, "apns-topic": APNS_BUNDLE,
+                       "apns-push-type": "alert", "apns-priority": "10"}
+                host = _apns_host()
+                with httpx.Client(http2=True, timeout=10) as client:
+                    for t in ios:
+                        try:
+                            r = client.post("https://%s/3/device/%s" % (host, t), headers=hdr, json=payload)
+                            if r.status_code == 200:
+                                n += 1
+                            else:
+                                info = "%s %s" % (r.status_code, (r.text or "")[:120])
+                                print("[apns] falha:", info)
+                                if r.status_code in (400, 410) and ("BadDeviceToken" in (r.text or "") or "Unregistered" in (r.text or "")):
+                                    mortos.append(t)
+                        except Exception as e:
+                            print("[apns] envio erro:", str(e)[:120])
+            except Exception as e:
+                print("[apns] erro geral:", e)
+    if mortos:
+        c = db(); c.executemany("DELETE FROM push_tokens WHERE token=?", [(t,) for t in mortos]); c.commit(); c.close()
+    return n
+
+
+@app.post("/api/push/register")
+async def push_register_native(req: Request):
+    u = current_user(req)
+    if not u:
+        return _unauth()
+    b = await req.json()
+    token = (b.get("token") or "").strip()
+    platform = (b.get("platform") or "ios").strip().lower()
+    if not token:
+        return JSONResponse({"error": "sem token"}, status_code=400)
+    _ensure_push_tokens()
+    now = _now_iso()
+    c = db(); c.execute("INSERT OR REPLACE INTO push_tokens (token,platform,user_id,created,updated) VALUES (?,?,?,?,?)",
+                        (token, platform, u["id"], now, now)); c.commit(); c.close()
+    return {"success": True}
+
+
+@app.post("/api/push/test")
+async def push_test_native(req: Request):
+    u = current_user(req)
+    if not u:
+        return _unauth()
+    n = _send_push_native([u["id"]], "Nuvemprime",
+                          "\U0001F514 Teste de notificacao — funcionou!", {"tipo": "teste"})
+    return {"success": True, "enviados": n}
+
+
 @app.post("/api/push/subscribe")
 async def push_subscribe(req: Request):
     u = current_user(req)
@@ -1852,6 +1962,15 @@ async def webhook(req: Request):
                                 url=alvo, tag=f"cam-{b.get('camera_id','')}")
             if n_push:
                 print(f"[push] enviado a {n_push} dispositivo(s)")
+            try:
+                n_app = _send_push_native(_push_users_do_alerta(cliente_id, provedor_id),
+                                          f"{emoji} {lbl}",
+                                          f"{b.get('camera_nome','')} · {int(b.get('confianca', 0) or 0)}% de confianca",
+                                          {"tipo": tipo, "camera_id": b.get('camera_id','')})
+                if n_app:
+                    print(f"[push-app] enviado a {n_app} app(s)")
+            except Exception as _e:
+                print("[push-app] erro:", _e)
     except Exception as e:
         print("[push] erro:", e)
 

@@ -215,6 +215,7 @@ button{font-family:inherit;cursor:pointer}
     <button class="btn" id="pw_btn">Salvar nova senha</button>
     <div id="pw_msg" class="msg" style="padding:12px 0 0"></div>
     <div class="sechd">Sessão</div>
+    <button class="btn ghost" id="pf_testpush" style="display:none;margin-bottom:8px">🔔 Testar notificação</button>
     <button class="btn ghost" id="conta_out">Sair da conta</button>
   </div>
 </div>
@@ -249,7 +250,9 @@ button{font-family:inherit;cursor:pointer}
   function fmtDT(s){ if(!s) return ''; var m=/(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(String(s)); return m? (m[3]+'/'+m[2]+' '+m[4]+':'+m[5]) : String(s).slice(0,16); }
   function thumbUrl(id){ return '/camthumb/'+encodeURIComponent(id)+'?t='+tq()+'&r='+Math.floor(Date.now()/1000); }
 
-  function applyBrand(){
+  function isApp(){ try{ if(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform())return true; }catch(e){} return (''+location.search).indexOf('app=1')>=0; }
+  function applyProvBrand(){ if(!isApp())return; try{ api('GET','/api/comercial/branding/me').then(function(b){ if(!b)return; if(b.cor)document.documentElement.style.setProperty('--accent',b.cor); var nm=b.nome||b.marca||''; var hb=$('hdr_brand'); if(b.logo){ hb.innerHTML='<img src="'+esc(b.logo)+'" alt="" style="height:24px;width:auto" onerror="this.replaceWith(document.createTextNode(\''+esc(nm||'Nuvemprime')+'\'))">'; } else if(nm){ hb.innerHTML='<span>'+esc(nm)+'</span>'; } }).catch(function(){}); }catch(e){} }
+  function applyBrand(){ if(isApp()){ var lb=$('l_brand'); if(lb)lb.innerHTML='NUVEMPRIME <span class="accent">·</span> Câmeras'; var h=$('hdr_brand'); if(h)h.innerHTML='<span>Nuvemprime</span>'; return; }
     fetch('/api/branding').then(function(r){return r.json();}).then(function(b){
       if(!b) return; var nome=b.nome||'Corexia';
       if(b.cor){ document.documentElement.style.setProperty('--accent', b.cor); }
@@ -573,7 +576,12 @@ button{font-family:inherit;cursor:pointer}
     }).catch(function(){});
   }
 
-  function start(){ view('app'); showTab('cam'); if(!window.__cxStI){ window.__cxStI=setInterval(loadStatus,25000); } startRefresh(); loadCams().catch(function(e){ if((e&&e.message)!=='sessao'){ $('cam_empty').textContent='Erro ao carregar câmeras.'; $('cam_empty').classList.remove('hide'); } }); }
+  function registerPush(){ if(!isApp())return; try{ var C=window.Capacitor, P=C&&C.Plugins&&C.Plugins.PushNotifications; if(!P)return; var plat=(C.getPlatform?C.getPlatform():'ios'); var tb=$('pf_testpush'); if(tb)tb.style.display='block';
+    P.addListener('registration', function(t){ var tok=t&&t.value; window.__pushtok=tok||''; if(tok){ window.__pushdbg='tok, enviando'; api('POST','/api/push/register',{token:tok,platform:plat}).then(function(){window.__pushdbg='registrado';}).catch(function(e){window.__pushdbg='POSTerro:'+((e&&e.message)||e);}); } else { window.__pushdbg='tok-vazio'; } });
+    P.addListener('registrationError', function(e){ try{window.__pushdbg='regError:'+JSON.stringify(e);}catch(_){window.__pushdbg='regError';} });
+    P.requestPermissions().then(function(r){ window.__pushperm=(r&&r.receive)||'?'; if(r&&r.receive==='granted'){ window.__pushdbg='perm-ok, register'; P.register(); } else { window.__pushdbg='perm='+((r&&r.receive)||'?'); } }).catch(function(e){ window.__pushdbg='reqPermErro:'+((e&&e.message)||e); });
+  }catch(e){} }
+  function start(){ view('app'); showTab('cam'); applyProvBrand(); registerPush(); if(!window.__cxStI){ window.__cxStI=setInterval(loadStatus,25000); } startRefresh(); loadCams().catch(function(e){ if((e&&e.message)!=='sessao'){ $('cam_empty').textContent='Erro ao carregar câmeras.'; $('cam_empty').classList.remove('hide'); } }); }
 
   applyBrand();
   $('l_btn').addEventListener('click',doLogin);
@@ -582,6 +590,7 @@ button{font-family:inherit;cursor:pointer}
   $('btn_conta').addEventListener('click',openConta);
   $('conta_x').addEventListener('click',closeConta);
   $('conta_out').addEventListener('click',logout);
+  (function(){ var tb=$('pf_testpush'); if(tb) tb.addEventListener('click',function(){ tb.disabled=true; var old=tb.textContent; tb.textContent='Enviando…'; (function(){ try{ if(!window.__pushtok && window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.PushNotifications){ window.Capacitor.Plugins.PushNotifications.register(); } }catch(_){} })(); api('POST','/api/push/test',{}).then(function(r){ if(r&&r.enviados){ tb.textContent='✅ Enviado ('+r.enviados+')'; } else { tb.textContent='⚠️ sem token'; alert('Push nao enviado.\nperm='+(window.__pushperm||'?')+'\ntoken='+(window.__pushtok?'SIM':'NAO')+'\ndbg='+(window.__pushdbg||'?')); } }).catch(function(e){ tb.textContent='Erro'; alert('Erro: '+((e&&e.message)||e)); }).then(function(){ setTimeout(function(){ tb.disabled=false; tb.textContent=old; },3500); }); }); })();
   $('pw_btn').addEventListener('click',changePw);
   $('pf_btn').addEventListener('click',savePref);
   $('ov_x').addEventListener('click',closeOv);
