@@ -1057,7 +1057,9 @@ async def prov_cliente_criar_acesso(cid: str, req: Request):
     if b.get("enviar_whatsapp"):
         fone = (cli.get("telefone") or cli.get("whatsapp") or b.get("telefone") or "").strip()
         if fone:
-            portal = (b.get("portal_url") or "").strip() or "portal.grupoviggia.com.br/novo"
+            _prov = _get_entity("Provedor", pid) or {}
+            _dom = (_prov.get("dominio") or "").strip().rstrip("/")
+            portal = ("https://" + _dom + "/novo") if _dom else ((b.get("portal_url") or "").strip() or "https://grupocorexia.com.br/novo")
             txt = ("Ola, " + nome + "! Seu acesso ao portal de monitoramento esta pronto.\n\n"
                    "Portal: " + portal + "\nLogin: " + email + "\nSenha: " + senha +
                    "\n\nDica: troque a senha no primeiro acesso.")

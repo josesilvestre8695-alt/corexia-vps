@@ -6347,7 +6347,7 @@ _PROV_CAMERAS_BODY = """
   <button onclick="zNova()">Finalizar forma</button>
   <button onclick="zUndo()">Desfazer ponto</button>
   <button onclick="zClear()" style="color:var(--bad)">Limpar tudo</button></div>
- <div style="color:var(--muted);font-size:12px;margin-bottom:8px">Clique na imagem p/ marcar os pontos. <b>Zona/Area/Agua</b>: 3+ pontos e "Finalizar forma". <b>Linha</b>: 2 pontos (fecha sozinha). Para piscina/afogamento ou guarda-piscina, marque tambem o modulo em "configurar IA".</div>
+ <div style="color:var(--muted);font-size:12px;margin-bottom:8px">Clique na imagem p/ marcar os pontos. <b>Zona/Area/Agua</b>: 3+ pontos e "Finalizar forma". <b>Linha</b>: 2 pontos. Depois, na lista abaixo, escolha se detecta <b>nos dois sentidos</b> ou <b>so no sentido da seta</b> (use "inverter seta" p/ apontar pra dentro/portao). Para piscina/afogamento ou guarda-piscina, marque tambem o modulo em "configurar IA".</div>
  <canvas id="z_cv" width="780" height="439" style="max-width:100%;border:1px solid var(--border);border-radius:10px;cursor:crosshair;display:block"></canvas>
  <div id="z_list" style="font-size:12px;color:var(--muted);margin-top:8px"></div>
  <div class="foot"><button onclick="zFecha()">Cancelar</button><button class="btn-primary" onclick="zSalvar()">Salvar zonas</button></div></div></div>
@@ -6619,11 +6619,11 @@ var Z_SHAPES=[], Z_CUR=[], Z_MODE='zona', Z_CAM=null, Z_IMG=null;
 function zMode(m){ Z_MODE=m; var mp={zona:'z_mzona',linha:'z_mlinha',heatmap:'z_mheat',agua:'z_magua',vigilancia:'z_mvig'}; for(var k in mp){var b=$(mp[k]); if(b)b.className=(m===k?'btn-primary':'');} }
 function zonas(id){ var c=CAMS.filter(function(x){return String(x.id)===String(id)})[0]; if(!c)return; Z_CAM=c;
  $('z_id').value=id; $('z_nome').textContent=c.nome||'';
- Z_SHAPES=((((c.config||{}).zonas_intrusao)||[])).map(function(s){return {tipo:s.tipo||'zona',nome:s.nome||'',pontos:(s.pontos||[]).slice()};});
+ Z_SHAPES=((((c.config||{}).zonas_intrusao)||[])).map(function(s){return {tipo:s.tipo||'zona',nome:s.nome||'',pontos:(s.pontos||[]).slice(),direcao:s.direcao||'ambos'};});
  Z_CUR=[]; zMode('zona'); Z_IMG=null; $('ovz').classList.add('open');
  var cv=$('z_cv'); if(!cv._bound){ cv._bound=1; cv.addEventListener('click',function(e){ var r=cv.getBoundingClientRect();
    var nx=(e.clientX-r.left)/r.width, ny=(e.clientY-r.top)/r.height; Z_CUR.push([+nx.toFixed(4),+ny.toFixed(4)]);
-   if(Z_MODE==='linha'&&Z_CUR.length>=2){ Z_SHAPES.push({tipo:'linha',nome:'Linha '+(Z_SHAPES.length+1),pontos:Z_CUR.slice(0,2)}); Z_CUR=[]; }
+   if(Z_MODE==='linha'&&Z_CUR.length>=2){ Z_SHAPES.push({tipo:'linha',nome:'Linha '+(Z_SHAPES.length+1),pontos:Z_CUR.slice(0,2),direcao:'ambos'}); Z_CUR=[]; }
    zDraw(); }); }
  zDraw();
  fetch('/camthumb/'+id+'?t='+encodeURIComponent(TOKEN),{headers:{'Authorization':'Bearer '+TOKEN}}).then(function(r){ if(!r.ok)throw 0; return r.blob(); })
@@ -6637,15 +6637,31 @@ function zDraw(){ var cv=$('z_cv'); var ctx=cv.getContext('2d'); ctx.clearRect(0
  function poly(pts,close,color){ if(!pts.length)return; ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=2; ctx.beginPath();
    pts.forEach(function(p,i){ var x=p[0]*cv.width,y=p[1]*cv.height; if(i===0)ctx.moveTo(x,y); else ctx.lineTo(x,y); }); if(close)ctx.closePath(); ctx.stroke();
    pts.forEach(function(p){ ctx.beginPath(); ctx.arc(p[0]*cv.width,p[1]*cv.height,4,0,7); ctx.fill(); }); }
- Z_SHAPES.forEach(function(s){ poly(s.pontos, s.tipo!=='linha', s.tipo==='linha'?'#34d399':(s.tipo==='heatmap'?'#38bdf8':(s.tipo==='agua'?'#3b82f6':(s.tipo==='vigilancia'?'#a855f7':'#f97316')))); });
+ function larrow(s){ if(!s.pontos||s.pontos.length<2)return; var A=s.pontos[0],B=s.pontos[1];
+   var ax=A[0]*cv.width,ay=A[1]*cv.height,bx=B[0]*cv.width,by=B[1]*cv.height;
+   var mx=(ax+bx)/2,my=(ay+by)/2, dx=bx-ax,dy=by-ay, L=Math.hypot(dx,dy)||1, nx=-dy/L,ny=dx/L;
+   var al=Math.max(22,Math.min(52,L*0.5)), tx=mx+nx*al, ty=my+ny*al, on=(s.direcao==='seta');
+   ctx.save(); ctx.strokeStyle=on?'#f59e0b':'rgba(245,158,11,.5)'; ctx.fillStyle=ctx.strokeStyle; ctx.lineWidth=on?3:2;
+   if(!on)ctx.setLineDash([5,4]); ctx.beginPath(); ctx.moveTo(mx,my); ctx.lineTo(tx,ty); ctx.stroke(); ctx.setLineDash([]);
+   var ang=Math.atan2(ty-my,tx-mx),hl=10; ctx.beginPath(); ctx.moveTo(tx,ty);
+   ctx.lineTo(tx-hl*Math.cos(ang-0.5),ty-hl*Math.sin(ang-0.5)); ctx.lineTo(tx-hl*Math.cos(ang+0.5),ty-hl*Math.sin(ang+0.5)); ctx.closePath(); ctx.fill();
+   if(on){ ctx.font='11px sans-serif'; ctx.fillStyle='#fbbf24'; ctx.fillText('detecta', tx+5, ty-2); } ctx.restore(); }
+ Z_SHAPES.forEach(function(s){ poly(s.pontos, s.tipo!=='linha', s.tipo==='linha'?'#34d399':(s.tipo==='heatmap'?'#38bdf8':(s.tipo==='agua'?'#3b82f6':(s.tipo==='vigilancia'?'#a855f7':'#f97316')))); if(s.tipo==='linha')larrow(s); });
  poly(Z_CUR,false,'#ffffff');
- var el=$('z_list'); el.innerHTML=Z_SHAPES.map(function(s,i){ return '<div>'+(s.tipo==='linha'?'Linha':(s.tipo==='agua'?'Agua':(s.tipo==='heatmap'?'Area':(s.tipo==='vigilancia'?'Vigilancia':'Zona'))))+' "'+esc(s.nome)+'" ('+s.pontos.length+' pts) <a href="#" data-zdel="'+i+'" style="color:var(--bad)">remover</a></div>'; }).join('')+(Z_CUR.length?'<div style="color:#fff">em edicao: '+Z_CUR.length+' ponto(s)</div>':'');
- if(!el._bound){ el._bound=1; el.addEventListener('click',function(ev){ var i=ev.target.getAttribute&&ev.target.getAttribute('data-zdel'); if(i!==null&&i!==undefined&&i!==''){ ev.preventDefault(); zDel(+i); } }); }
+ var el=$('z_list'); el.innerHTML=Z_SHAPES.map(function(s,i){ var lbl=(s.tipo==='linha'?'Linha':(s.tipo==='agua'?'Agua':(s.tipo==='heatmap'?'Area':(s.tipo==='vigilancia'?'Vigilancia':'Zona'))));
+   var ctrl=''; if(s.tipo==='linha'){ var d=s.direcao||'ambos'; ctrl=' &nbsp;<select data-zdir="'+i+'" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--ink);font-size:11px;padding:2px 4px;vertical-align:middle"><option value="ambos"'+(d==='ambos'?' selected':'')+'>nos dois sentidos</option><option value="seta"'+(d==='seta'?' selected':'')+'>so no sentido da seta</option></select> <a href="#" data-zinv="'+i+'" style="color:var(--accent)">inverter seta</a>'; }
+   return '<div style="margin:3px 0">'+lbl+' "'+esc(s.nome)+'" ('+s.pontos.length+' pts)'+ctrl+' <a href="#" data-zdel="'+i+'" style="color:var(--bad)">remover</a></div>'; }).join('')+(Z_CUR.length?'<div style="color:#fff">em edicao: '+Z_CUR.length+' ponto(s)</div>':'');
+ if(!el._bound){ el._bound=1;
+   el.addEventListener('click',function(ev){ var t=ev.target; if(!t||!t.getAttribute)return;
+     var di=t.getAttribute('data-zdel'); if(di!==null&&di!==undefined&&di!==''){ ev.preventDefault(); zDel(+di); return; }
+     var iv=t.getAttribute('data-zinv'); if(iv!==null&&iv!==undefined&&iv!==''){ ev.preventDefault(); var s=Z_SHAPES[+iv]; if(s&&s.pontos&&s.pontos.length>=2){ s.pontos=[s.pontos[1],s.pontos[0]]; zDraw(); } return; } });
+   el.addEventListener('change',function(ev){ var t=ev.target; if(!t||!t.getAttribute)return; var dd=t.getAttribute('data-zdir'); if(dd!==null&&dd!==undefined&&dd!==''){ var s=Z_SHAPES[+dd]; if(s){ s.direcao=t.value; zDraw(); } } });
+ }
 }
 function zUndo(){ Z_CUR.pop(); zDraw(); }
 function zNova(){ var poly=(Z_MODE!=='linha');
  if(poly&&Z_CUR.length>=3){ Z_SHAPES.push({tipo:Z_MODE,nome:(Z_MODE==='heatmap'?'Area ':(Z_MODE==='agua'?'Agua ':'Zona '))+(Z_SHAPES.length+1),pontos:Z_CUR.slice()}); Z_CUR=[]; }
- else if(!poly&&Z_CUR.length>=2){ Z_SHAPES.push({tipo:'linha',nome:'Linha '+(Z_SHAPES.length+1),pontos:Z_CUR.slice(0,2)}); Z_CUR=[]; }
+ else if(!poly&&Z_CUR.length>=2){ Z_SHAPES.push({tipo:'linha',nome:'Linha '+(Z_SHAPES.length+1),pontos:Z_CUR.slice(0,2),direcao:'ambos'}); Z_CUR=[]; }
  else { msg('Poligono precisa de 3+ pontos; linha de 2.'); return; } zDraw(); }
 function zDel(i){ Z_SHAPES.splice(i,1); zDraw(); }
 function zClear(){ Z_SHAPES=[]; Z_CUR=[]; zDraw(); }
@@ -6657,7 +6673,7 @@ function zEnsure(body){ var hz=Z_SHAPES.some(function(z){return z.tipo==='zona'}
  else { body.analiticos_padrao=body.analiticos_padrao||[]; ens(body.analiticos_padrao); } }
 async function zSalvar(){ var c=Z_CAM; if(!c)return; var poly=(Z_MODE!=='linha');
  if(poly&&Z_CUR.length>=3){ Z_SHAPES.push({tipo:Z_MODE,nome:(Z_MODE==='heatmap'?'Area ':(Z_MODE==='agua'?'Agua ':'Zona '))+(Z_SHAPES.length+1),pontos:Z_CUR.slice()}); Z_CUR=[]; }
- else if(!poly&&Z_CUR.length>=2){ Z_SHAPES.push({tipo:'linha',nome:'Linha '+(Z_SHAPES.length+1),pontos:Z_CUR.slice(0,2)}); Z_CUR=[]; }
+ else if(!poly&&Z_CUR.length>=2){ Z_SHAPES.push({tipo:'linha',nome:'Linha '+(Z_SHAPES.length+1),pontos:Z_CUR.slice(0,2),direcao:'ambos'}); Z_CUR=[]; }
  var cfg=c.config||{};
  var body={ camera_id:c.id, camera_nome:c.nome||'', ativo:(cfg.ativo!==undefined?cfg.ativo:true),
   horarios:(cfg.horarios||[]).map(function(h){return {label:h.label||'',dias:(h.dias||[]).slice(),hora_inicio:h.hora_inicio||'00:00',hora_fim:h.hora_fim||'23:59',analiticos:(h.analiticos||[]).slice()};}),

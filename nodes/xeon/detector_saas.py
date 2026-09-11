@@ -554,6 +554,57 @@ _zona_ultimo = {}   # (cam_id, "zona:<nome>") -> ts do ultimo alerta
 ZONA_COOLDOWN  = int(os.getenv("ZONA_COOLDOWN", "60"))       # 1 alerta por zona/cam a cada Xs
 ZONA_LINHA_TOL = float(os.getenv("ZONA_LINHA_TOL", "0.035").replace(",", "."))  # dist. (frac) p/ "pisar" na linha
 
+# rastreio por pessoa p/ CRUZAMENTO de linha (direcional) - reaproveita o padrao dos _susp_tracks
+_line_tracks = {}   # cid -> [ {id, cx, cy, last, hits} ]
+_line_tid = {}
+LINE_TRACK_TOL = float(os.getenv("LINE_TRACK_TOL", "0.14").replace(",", "."))  # casa pessoa<->track (frac)
+LINE_GAP_SEC   = float(os.getenv("LINE_GAP_SEC", "3").replace(",", "."))       # some > Xs -> track encerra
+
+
+def _seg_side(ax, ay, bx, by, px, py):
+    return (bx - ax) * (py - ay) - (by - ay) * (px - ax)
+
+
+def _segs_cross(ax, ay, bx, by, cx, cy, dx, dy):
+    d1 = _seg_side(cx, cy, dx, dy, ax, ay); d2 = _seg_side(cx, cy, dx, dy, bx, by)
+    d3 = _seg_side(ax, ay, bx, by, cx, cy); d4 = _seg_side(ax, ay, bx, by, dx, dy)
+    return ((d1 > 0) != (d2 > 0)) and ((d3 > 0) != (d4 > 0))
+
+
+def _linha_cross_check(cam, linhas, persons, frame_bgr, now):
+    """Cruzamento REAL de linha: segmento de movimento da pessoa (frame anterior->atual)
+    x segmento da linha. Direcao 'seta' = so conta quem entra no lado + (o lado da seta na UI)."""
+    cid = cam.get("id")
+    tracks = _line_tracks.get(cid) or []
+    used = [False] * len(tracks)
+    for (fx, fy, pp) in persons:
+        best = -1; bestd = LINE_TRACK_TOL
+        for i, tk in enumerate(tracks):
+            if used[i]:
+                continue
+            d = ((fx - tk["cx"]) ** 2 + (fy - tk["cy"]) ** 2) ** 0.5
+            if d < bestd:
+                bestd = d; best = i
+        if best >= 0:
+            tk = tracks[best]; used[best] = True
+            px, py = tk["cx"], tk["cy"]
+            for z in linhas:
+                pts = z.get("pontos") or []
+                (ax, ay), (bx, by) = pts[0], pts[1]
+                if _segs_cross(ax, ay, bx, by, px, py, fx, fy):
+                    direc = (z.get("direcao") or "ambos")
+                    if direc == "seta" and _seg_side(ax, ay, bx, by, px, py) >= 0:
+                        continue   # veio do lado da seta (ou em cima) -> sentido errado, ignora
+                    nome = z.get("nome") or "linha"
+                    _zona_alerta(cam, "Cruzou a linha '%s'" % nome, z, pp, frame_bgr, now, nome)
+            tk["cx"], tk["cy"], tk["last"] = fx, fy, now; tk["hits"] = tk.get("hits", 1) + 1
+        else:
+            _line_tid[cid] = _line_tid.get(cid, 0) + 1
+            tracks.append({"id": _line_tid[cid], "cx": fx, "cy": fy, "last": now, "hits": 1})
+    tracks = [tk for tk in tracks if (now - tk["last"]) <= LINE_GAP_SEC]
+    _line_tracks[cid] = tracks
+
+
 
 def _pt_in_poly(x, y, poly):
     inside = False; n = len(poly); j = n - 1
@@ -600,8 +651,9 @@ def _zona_alerta(cam, desc, z, pred, frame_bgr, now, nome):
 
 
 def _zona_check(cam, predictions, frame_bgr, now):
-    """Se a camera tem zonas/linhas e o analitico esta ativo, alerta quando uma PESSOA
-    esta dentro da zona (poligono) ou sobre a linha (faixa)."""
+    """Zona (poligono) = presenca de pessoa DENTRO. Linha = CRUZAMENTO real com rastreio,
+    opcionalmente direcional (direcao='seta'). Antes a linha so via 'perto da linha' -> dava
+    falso-positivo em quem so passava perto (ex.: calcada em frente ao portao)."""
     cfg = cam.get("config_analitico") or {}
     zonas = cfg.get("zonas_intrusao") or []
     if not zonas or frame_bgr is None:
@@ -613,19 +665,19 @@ def _zona_check(cam, predictions, frame_bgr, now):
     preds = predictions.get("predictions", []) if isinstance(predictions, dict) else []
     H, W = frame_bgr.shape[:2]
     persons = _person_pts(preds, W, H)
-    if not persons:
-        return
-    for z in zonas:
-        tz = z.get("tipo", "zona"); pts = z.get("pontos") or []; nome = z.get("nome") or tz
-        if tz == "zona" and intruso_on and len(pts) >= 3:
-            hit = next((pp for (fx, fy, pp) in persons if _pt_in_poly(fx, fy, pts)), None)
-            if hit is not None:
-                _zona_alerta(cam, "Intruso na zona '%s'" % nome, z, hit, frame_bgr, now, nome)
-        elif tz == "linha" and linha_on and len(pts) >= 2:
-            (ax, ay), (bx, by) = pts[0], pts[1]
-            hit = next((pp for (fx, fy, pp) in persons if _dist_seg(fx, fy, ax, ay, bx, by) <= ZONA_LINHA_TOL), None)
-            if hit is not None:
-                _zona_alerta(cam, "Cruzou a linha '%s'" % nome, z, hit, frame_bgr, now, nome)
+    # ZONA (poligono): alerta por presenca dentro
+    if intruso_on and persons:
+        for z in zonas:
+            if z.get("tipo", "zona") == "zona" and len(z.get("pontos") or []) >= 3:
+                nome = z.get("nome") or "zona"
+                hit = next((pp for (fx, fy, pp) in persons if _pt_in_poly(fx, fy, z["pontos"])), None)
+                if hit is not None:
+                    _zona_alerta(cam, "Intruso na zona '%s'" % nome, z, hit, frame_bgr, now, nome)
+    # LINHA: cruzamento (segmento de movimento x linha) com direcao opcional
+    if linha_on:
+        linhas = [z for z in zonas if z.get("tipo") == "linha" and len(z.get("pontos") or []) >= 2]
+        if linhas:
+            _linha_cross_check(cam, linhas, persons, frame_bgr, now)
 
 
 def _person_pts(preds, W, H):
