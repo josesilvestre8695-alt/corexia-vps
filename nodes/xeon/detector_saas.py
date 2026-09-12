@@ -593,8 +593,11 @@ def _linha_cross_check(cam, linhas, persons, frame_bgr, now):
                 (ax, ay), (bx, by) = pts[0], pts[1]
                 if _segs_cross(ax, ay, bx, by, px, py, fx, fy):
                     direc = (z.get("direcao") or "ambos")
-                    if direc == "seta" and _seg_side(ax, ay, bx, by, px, py) >= 0:
-                        continue   # veio do lado da seta (ou em cima) -> sentido errado, ignora
+                    _lado_prev = _seg_side(ax, ay, bx, by, px, py)   # de que lado a pessoa VINHA
+                    if direc in ("seta", "pos") and _lado_prev >= 0:
+                        continue   # so conta quem ENTRA no lado + (tinha de vir do lado -)
+                    if direc == "neg" and _lado_prev <= 0:
+                        continue   # so conta quem ENTRA no lado - (tinha de vir do lado +)
                     nome = z.get("nome") or "linha"
                     _zona_alerta(cam, "Cruzou a linha '%s'" % nome, z, pp, frame_bgr, now, nome)
             tk["cx"], tk["cy"], tk["last"] = fx, fy, now; tk["hits"] = tk.get("hits", 1) + 1
@@ -1183,7 +1186,7 @@ def _susp_alerta(cam, area, frame_bgr, W, H, tk, dwell, now, modo="parado"):
     _lbl = ("RONDANDO ~%ds" % int(dwell)) if _rond else ("PERMANENCIA ~%ds" % int(dwell))
     _txt = ("pessoa RONDANDO a area ha ~%ds (indo e voltando, sem sair do local)" % int(dwell)) if _rond else ("pessoa parada/permanencia ha ~%ds na area vigiada" % int(dwell))
     # --- Fase 2: confirma o COMPORTAMENTO com Gemini (anti-vies; so acao) ---
-    verif, extra = True, ""
+    verif, extra, confirmed = True, "", False
     if SUSP_GEMINI_ON:
         try:
             g = frame_bgr.copy()
@@ -1194,7 +1197,7 @@ def _susp_alerta(cam, area, frame_bgr, W, H, tk, dwell, now, modo="parado"):
             if okg:
                 sus, motivo = gemini_suspeito(bg.tobytes(), cam.get("nome", ""), dwell)
                 if sus is True:
-                    extra = " [IA-visao: " + (motivo or "confirmado") + "]"
+                    confirmed = True; extra = " [IA-visao: " + (motivo or "confirmado") + "]"
                 elif sus is False:
                     verif = False
                     extra = " [IA-visao: sem indicio claro" + ((" - " + motivo) if motivo else "") + " - em revisao]"
@@ -1202,6 +1205,11 @@ def _susp_alerta(cam, area, frame_bgr, W, H, tk, dwell, now, modo="parado"):
                     extra = " [IA-visao indisponivel]"
         except Exception as _e:
             print("[suspeito] gemini:", _e)
+    # RIGIDO: so notifica quando o Gemini CONFIRMA o comportamento. Negou/indisponivel -> NAO envia
+    # (corta o falso-positivo de gente parada normal em condominio/comercio). Furto (Fase 3) segue proprio.
+    if SUSP_GEMINI_ON and not confirmed:
+        print("[suspeito] %s: descartado (gemini nao confirmou) track %s ~%ds" % (cam.get("nome", ""), tk.get("id"), int(dwell)))
+        return
     # --- imagem do alerta ---
     img_b64 = None
     try:

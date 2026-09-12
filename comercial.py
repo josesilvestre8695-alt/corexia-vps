@@ -6347,7 +6347,7 @@ _PROV_CAMERAS_BODY = """
   <button onclick="zNova()">Finalizar forma</button>
   <button onclick="zUndo()">Desfazer ponto</button>
   <button onclick="zClear()" style="color:var(--bad)">Limpar tudo</button></div>
- <div style="color:var(--muted);font-size:12px;margin-bottom:8px">Clique na imagem p/ marcar os pontos. <b>Zona/Area/Agua</b>: 3+ pontos e "Finalizar forma". <b>Linha</b>: 2 pontos. Depois, na lista abaixo, escolha se detecta <b>nos dois sentidos</b> ou <b>so no sentido da seta</b> (use "inverter seta" p/ apontar pra dentro/portao). Para piscina/afogamento ou guarda-piscina, marque tambem o modulo em "configurar IA".</div>
+ <div style="color:var(--muted);font-size:12px;margin-bottom:8px">Clique na imagem p/ marcar os pontos. <b>Zona/Area/Agua</b>: 3+ pontos e "Finalizar forma". <b>Linha</b>: 2 pontos. Depois, na lista abaixo, escolha o sentido do cruzamento que alarma: <b>qualquer sentido</b>, <b>so para cima</b> ou <b>so para baixo</b> (a seta na imagem mostra o sentido detectado). Para piscina/afogamento ou guarda-piscina, marque tambem o modulo em "configurar IA".</div>
  <canvas id="z_cv" width="780" height="439" style="max-width:100%;border:1px solid var(--border);border-radius:10px;cursor:crosshair;display:block"></canvas>
  <div id="z_list" style="font-size:12px;color:var(--muted);margin-top:8px"></div>
  <div class="foot"><button onclick="zFecha()">Cancelar</button><button class="btn-primary" onclick="zSalvar()">Salvar zonas</button></div></div></div>
@@ -6640,16 +6640,21 @@ function zDraw(){ var cv=$('z_cv'); var ctx=cv.getContext('2d'); ctx.clearRect(0
  function larrow(s){ if(!s.pontos||s.pontos.length<2)return; var A=s.pontos[0],B=s.pontos[1];
    var ax=A[0]*cv.width,ay=A[1]*cv.height,bx=B[0]*cv.width,by=B[1]*cv.height;
    var mx=(ax+bx)/2,my=(ay+by)/2, dx=bx-ax,dy=by-ay, L=Math.hypot(dx,dy)||1, nx=-dy/L,ny=dx/L;
-   var al=Math.max(22,Math.min(52,L*0.5)), tx=mx+nx*al, ty=my+ny*al, on=(s.direcao==='seta');
-   ctx.save(); ctx.strokeStyle=on?'#f59e0b':'rgba(245,158,11,.5)'; ctx.fillStyle=ctx.strokeStyle; ctx.lineWidth=on?3:2;
-   if(!on)ctx.setLineDash([5,4]); ctx.beginPath(); ctx.moveTo(mx,my); ctx.lineTo(tx,ty); ctx.stroke(); ctx.setLineDash([]);
-   var ang=Math.atan2(ty-my,tx-mx),hl=10; ctx.beginPath(); ctx.moveTo(tx,ty);
-   ctx.lineTo(tx-hl*Math.cos(ang-0.5),ty-hl*Math.sin(ang-0.5)); ctx.lineTo(tx-hl*Math.cos(ang+0.5),ty-hl*Math.sin(ang+0.5)); ctx.closePath(); ctx.fill();
-   if(on){ ctx.font='11px sans-serif'; ctx.fillStyle='#fbbf24'; ctx.fillText('detecta', tx+5, ty-2); } ctx.restore(); }
+   var d=s.direcao||'ambos'; if(d==='seta')d='pos'; var al=Math.max(22,Math.min(52,L*0.5));
+   function arw(vx,vy,solid){ var tx=mx+vx*al, ty=my+vy*al; ctx.save();
+     ctx.strokeStyle=solid?'#f59e0b':'rgba(245,158,11,.5)'; ctx.fillStyle=ctx.strokeStyle; ctx.lineWidth=solid?3:2;
+     if(!solid)ctx.setLineDash([5,4]); ctx.beginPath(); ctx.moveTo(mx,my); ctx.lineTo(tx,ty); ctx.stroke(); ctx.setLineDash([]);
+     var ang=Math.atan2(ty-my,tx-mx),hl=10; ctx.beginPath(); ctx.moveTo(tx,ty);
+     ctx.lineTo(tx-hl*Math.cos(ang-0.5),ty-hl*Math.sin(ang-0.5)); ctx.lineTo(tx-hl*Math.cos(ang+0.5),ty-hl*Math.sin(ang+0.5)); ctx.closePath(); ctx.fill(); ctx.restore(); }
+   if(d==='ambos'){ arw(nx,ny,false); arw(-nx,-ny,false); } else if(d==='neg'){ arw(-nx,-ny,true); } else { arw(nx,ny,true); } }
  Z_SHAPES.forEach(function(s){ poly(s.pontos, s.tipo!=='linha', s.tipo==='linha'?'#34d399':(s.tipo==='heatmap'?'#38bdf8':(s.tipo==='agua'?'#3b82f6':(s.tipo==='vigilancia'?'#a855f7':'#f97316')))); if(s.tipo==='linha')larrow(s); });
  poly(Z_CUR,false,'#ffffff');
  var el=$('z_list'); el.innerHTML=Z_SHAPES.map(function(s,i){ var lbl=(s.tipo==='linha'?'Linha':(s.tipo==='agua'?'Agua':(s.tipo==='heatmap'?'Area':(s.tipo==='vigilancia'?'Vigilancia':'Zona'))));
-   var ctrl=''; if(s.tipo==='linha'){ var d=s.direcao||'ambos'; ctrl=' &nbsp;<select data-zdir="'+i+'" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--ink);font-size:11px;padding:2px 4px;vertical-align:middle"><option value="ambos"'+(d==='ambos'?' selected':'')+'>nos dois sentidos</option><option value="seta"'+(d==='seta'?' selected':'')+'>so no sentido da seta</option></select> <a href="#" data-zinv="'+i+'" style="color:var(--accent)">inverter seta</a>'; }
+   var ctrl=''; if(s.tipo==='linha'){ var d=s.direcao||'ambos'; if(d==='seta')d='pos';
+     var A=s.pontos[0]||[0,0],B=s.pontos[1]||[0,0], dxp=(B[0]-A[0])*cv.width, dyp=(B[1]-A[1])*cv.height, horiz=Math.abs(dxp)>=Math.abs(dyp), o1,o2;
+     if(horiz){ var cimaVal=(dxp<0?'pos':'neg'); o1=[cimaVal,'so para cima']; o2=[(cimaVal==='pos'?'neg':'pos'),'so para baixo']; }
+     else { var nxp=-dyp, dirVal=(nxp>0?'pos':'neg'); o1=[dirVal,'so para a direita']; o2=[(dirVal==='pos'?'neg':'pos'),'so para a esquerda']; }
+     ctrl=' &nbsp;<select data-zdir="'+i+'" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--ink);font-size:11px;padding:2px 4px;vertical-align:middle"><option value="ambos"'+(d==='ambos'?' selected':'')+'>qualquer sentido</option><option value="'+o1[0]+'"'+(d===o1[0]?' selected':'')+'>'+o1[1]+'</option><option value="'+o2[0]+'"'+(d===o2[0]?' selected':'')+'>'+o2[1]+'</option></select>'; }
    return '<div style="margin:3px 0">'+lbl+' "'+esc(s.nome)+'" ('+s.pontos.length+' pts)'+ctrl+' <a href="#" data-zdel="'+i+'" style="color:var(--bad)">remover</a></div>'; }).join('')+(Z_CUR.length?'<div style="color:#fff">em edicao: '+Z_CUR.length+' ponto(s)</div>':'');
  if(!el._bound){ el._bound=1;
    el.addEventListener('click',function(ev){ var t=ev.target; if(!t||!t.getAttribute)return;
