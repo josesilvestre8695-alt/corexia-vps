@@ -7007,7 +7007,7 @@ async function dia(i,j,btn){
  try{
   var list=(await api('GET','/api/gravacoes?camera_id='+encodeURIComponent(c.camera_id)+'&data='+encodeURIComponent(d)))||[];
   if(!list.length){ $('segs').innerHTML='<div class="center" style="color:var(--muted)">Sem gravacoes neste dia.</div>'; return; }
-  window.__U=list.map(function(s){ return '/gravacao/'+c.camera_id+'/'+encodeURIComponent(s.arquivo)+'?t='+encodeURIComponent(TOKEN); });
+  window.__U=list.map(function(s){ return s.url; });
   $('segs').innerHTML=list.map(function(s,k){ return '<div class="seg"><span>'+esc(s.inicio||s.arquivo)+' &middot; '+(s.tamanho_mb||0)+' MB</span><button class="act" onclick="play('+k+')">assistir</button></div>'; }).join('');
  }catch(e){ $('segs').innerHTML='<div class="center" style="color:var(--bad)">Erro: '+esc(e.message)+'</div>'; }
 }

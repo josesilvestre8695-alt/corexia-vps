@@ -2401,14 +2401,15 @@ def _gemini_match(query, jpeg_path):
         return (False, 0, "erro")
 
 
-def _busca_instant_query(camera_id, date, query, topk=24):
-    """Consulta o indice CLIP na Xeon via tunel reverso (127.0.0.1:9765). None se indisponivel/nao indexado."""
+def _busca_instant_query(camera_id, date, query, topk=24, t0=None, t1=None):
+    """Consulta o indice CLIP na Xeon via tunel reverso (127.0.0.1:9765). None se indisponivel/nao indexado.
+    t0/t1 (HH:MM:SS) escopam a janela de tempo (ex.: um trecho selecionado)."""
     url = os.getenv("BUSCA_SVC_URL", "http://127.0.0.1:9765")
     sec = os.getenv("BUSCA_SVC_SECRET", "")
     try:
         r = requests.post(url + "/query", timeout=12,
                           headers={"X-Busca-Secret": sec, "Content-Type": "application/json"},
-                          json={"text": query, "camera_key": camera_id, "date": date, "topk": topk, "min_score": 0.18})
+                          json={"text": query, "camera_key": camera_id, "date": date, "topk": topk, "min_score": 0.18, "t0": t0, "t1": t1})
         if r.status_code != 200:
             return None
         return r.json()
@@ -2443,9 +2444,41 @@ def _busca_worker(job_id, camera_id, cam_nome, folder, date, segs, query, step, 
     # === modo INSTANTANEO: tenta o indice CLIP (Xeon via tunel) antes do Nivel B ===
     try:
         _sel = set(a for a, _si in segs)
-        _inst = _busca_instant_query_image(camera_id, date, image_b64, 24) if image_b64 else _busca_instant_query(camera_id, date, query, 24)
-        if _inst is not None and _inst.get("indexed") and _inst.get("results"):
-            _res = _inst["results"] if image_b64 else [r for r in _inst["results"] if r.get("arquivo") in _sel]
+        _res = None
+        if image_b64:
+            _inst = _busca_instant_query_image(camera_id, date, image_b64, 60)
+            if _inst and _inst.get("indexed"):
+                _res = _inst.get("results") or []
+        else:
+            # descobre se camera/dia esta indexado (query leve no dia) — serve tb de fallback
+            _day = _busca_instant_query(camera_id, date, query, 48)
+            if _day and _day.get("indexed"):
+                def _addmin(hms, mins):
+                    try:
+                        h, m, sec2 = [int(x) for x in str(hms).split(":")]
+                        t = h * 3600 + m * 60 + sec2 + mins * 60
+                        return "%02d:%02d:%02d" % ((t // 3600) % 24, (t % 3600) // 60, t % 60)
+                    except Exception:
+                        return None
+                # busca ESCOPADA a cada trecho marcado (t0/t1 = janela do segmento). Antes pegava so o top-24
+                # do DIA todo e o carro do trecho (score menor) nao entrava -> parecia "nao achou".
+                _acc = {}
+                for _arq, _ini in segs:
+                    _q = _busca_instant_query(camera_id, date, query, 20, _ini, _addmin(_ini, 16))
+                    for r in ((_q or {}).get("results") or []):
+                        if r.get("arquivo") != _arq:
+                            continue
+                        _k = (r.get("arquivo"), int(float(r.get("offset", 0)) // 12))  # dedupe ~12s (carro parado)
+                        if _k not in _acc or float(r.get("score", 0)) > float(_acc[_k].get("score", 0)):
+                            _acc[_k] = r
+                _sel_res = sorted(_acc.values(), key=lambda r: -float(r.get("score", 0)))[:80]
+                if _sel_res:
+                    _res = _sel_res
+                else:
+                    _res = (_day.get("results") or [])[:48]
+                    if _res:
+                        job["msgs"] = (job.get("msgs") or []) + ["Nenhum resultado nos trechos marcados - mostrando o dia inteiro."]
+        if _res:
             job["mode"] = "instant"
             job["total"] = len(_res)
 
