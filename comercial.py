@@ -2663,6 +2663,7 @@ def prov_cameras_api(req: Request):
         if d.get("camera_id"):
             cfgs[d["camera_id"]] = {"ativo": d.get("ativo", True), "horarios": d.get("horarios", []),
                                     "analiticos_padrao": d.get("analiticos_padrao", []),
+                                    "susp_dwell": d.get("susp_dwell"),
                                     "zonas_intrusao": d.get("zonas_intrusao", [])}
     mtx_online = _mtx_ready()
     out = []
@@ -2741,8 +2742,20 @@ async def prov_analiticos_salvar(req: Request):
             "horarios": b.get("horarios", []) or [], "analiticos_padrao": b.get("analiticos_padrao", []) or [],
             "zonas_intrusao": b.get("zonas_intrusao", []) or []}
     c = _db()
-    row = c.execute("SELECT id FROM entities WHERE entity='ConfigAnalitico' AND json_extract(data,'$.camera_id')=?", (cid,)).fetchone()
+    row = c.execute("SELECT id, data FROM entities WHERE entity='ConfigAnalitico' AND json_extract(data,'$.camera_id')=?", (cid,)).fetchone()
     c.close()
+    # tempo de merodeio (suspeito) por camera -> preserva o existente se este POST nao mandar
+    _sd = b.get("susp_dwell")
+    if _sd is None and row:
+        try:
+            _sd = (json.loads(row["data"]) or {}).get("susp_dwell")
+        except Exception:
+            _sd = None
+    if _sd is not None:
+        try:
+            data["susp_dwell"] = int(float(_sd))
+        except Exception:
+            pass
     if row:
         _update_ent("ConfigAnalitico", row["id"], data)
     else:
@@ -6129,7 +6142,7 @@ async function salvarAcesso(){ var id=$('a_cid').value; var email=($('a_email').
     var wa=d.whatsapp, waTxt;
     if(wa==='enviado')waTxt='&#9989; enviado por WhatsApp'; else if(wa==='sem_telefone')waTxt='&#9888; cliente sem telefone cadastrado'; else if(wa==='nao_enviado')waTxt='(nao enviado por WhatsApp)'; else waTxt='&#9888; falha ao enviar WhatsApp (credenciais abaixo)';
     var r=$('a_result'); r.style.display='block';
-    r.innerHTML='<b>'+(d.reset?'Senha redefinida':'Acesso criado')+'</b><br>Portal: '+esc(portal)+'<br>Login: '+esc(email)+'<br>Senha: <b>'+esc(senha)+'</b><br>'+waTxt;
+    r.innerHTML='<b>'+(d.reset?'Senha redefinida':'Acesso criado')+'</b><br>Portal: '+esc(d.portal||portal)+'<br>Login: '+esc(email)+'<br>Senha: <b>'+esc(senha)+'</b><br>'+waTxt;
     $('a_msg').textContent=''; $('a_msg').className='msg'; msg('Acesso salvo.',true);
   }catch(e){ $('a_msg').textContent='Erro: '+e.message; $('a_msg').className='msg err'; } }
 function novo(){ $('mt').textContent='Novo Cliente'; ['c_id','c_nome','c_doc','c_email','c_tel','c_plano','c_valor','c_cep','c_num','c_end','c_bairro','c_compl','c_cidade','c_uf'].forEach(function(i){$(i).value='';}); $('c_dt').value='cnpj'; $('ov').classList.add('open'); }
@@ -6334,7 +6347,7 @@ _PROV_CAMERAS_BODY = """
   <div class="two"><div class="fld"><label>Hora inicio</label><input id="a_ini" type="time" value="08:00"></div>
    <div class="fld"><label>Hora fim</label><input id="a_fim" type="time" value="18:00"></div></div>
  </div>
- <div style="text-align:right;font-size:13px;margin-top:8px">Custo de IA desta camera: <b id="a_custo" style="color:var(--accent)">R$ 0,00</b>/mes</div>
+ <div id="susp_dwell_row" style="display:none;margin:8px 0;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px"><div style="font-size:12px;color:var(--muted);margin-bottom:7px">Merodeio (suspeito): tempo p/ disparar, <b>por camera</b>. Exige a <b>Zona de Vigilancia</b> desenhada (so alarma quem permanece/ronda DENTRO dela).</div><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:13px">Disparar apos</span><input id="a_susp_dwell" type="number" min="5" max="600" step="5" value="180" style="width:92px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--ink);padding:8px 10px;font-size:14px"><span style="font-size:13px;color:var(--muted)">segundos na zona</span></div></div> <div style="text-align:right;font-size:13px;margin-top:8px">Custo de IA desta camera: <b id="a_custo" style="color:var(--accent)">R$ 0,00</b>/mes</div>
  <div class="foot"><button onclick="fecha()">Cancelar</button><button id="a_limpar" onclick="limpar()" style="color:var(--bad)">Desligar IA</button><button class="btn-primary" onclick="salvar()">Salvar</button></div></div></div>
 
 <div class="ov" id="ovz"><div class="modal" style="max-width:820px"><h2>Zonas - <span id="z_nome"></span></h2><input type="hidden" id="z_id">
@@ -6514,9 +6527,9 @@ function onSub(k){ var mod=DATA.modulos.filter(function(m){return m.key===k})[0]
  computeCusto(); }
 function computeCusto(){ var t=0; DATA.modulos.forEach(function(mod){ var mc=$('m_'+mod.key); if(!mc||!mc.checked)return;
   if(mod.pacote){ if(mod.analiticos.some(function(a){var e=$('d_'+a[0]);return e&&e.checked;}))t+=mod.valor; } else t+=mod.valor; });
- $('a_custo').textContent=brl(t); var _mf=$('m_facial'),_fr=$('facialrow'); if(_fr)_fr.style.display=(_mf&&_mf.checked)?'block':'none'; try{updDrawBtn();}catch(e){} }
-function updDrawBtn(){ var need=['d_intruso','d_linha','m_heatmap','m_piscina','m_guarda_piscina'].some(function(id){var e=$(id);return e&&e.checked;}); var r=$('drawrow'); if(r)r.style.display=need?'block':'none'; }
-function drawFromIA(){ var id=($('a_id')||{}).value; if(!id)return; $('ov').classList.remove('open'); try{ zonas(id); }catch(e){ return; } var m='zona'; if($('d_linha')&&$('d_linha').checked)m='linha'; else if($('d_intruso')&&$('d_intruso').checked)m='zona'; else if($('m_heatmap')&&$('m_heatmap').checked)m='heatmap'; else if(($('m_piscina')&&$('m_piscina').checked)||($('m_guarda_piscina')&&$('m_guarda_piscina').checked))m='agua'; try{ zMode(m); }catch(e){} }
+ $('a_custo').textContent=brl(t); var _mf=$('m_facial'),_fr=$('facialrow'); if(_fr)_fr.style.display=(_mf&&_mf.checked)?'block':'none'; var _ds=$('d_suspeito'),_sr=$('susp_dwell_row'); if(_sr)_sr.style.display=(_ds&&_ds.checked)?'block':'none'; try{updDrawBtn();}catch(e){} }
+function updDrawBtn(){ var need=['d_intruso','d_linha','d_suspeito','m_heatmap','m_piscina','m_guarda_piscina'].some(function(id){var e=$(id);return e&&e.checked;}); var r=$('drawrow'); if(r)r.style.display=need?'block':'none'; }
+function drawFromIA(){ var id=($('a_id')||{}).value; if(!id)return; $('ov').classList.remove('open'); try{ zonas(id); }catch(e){ return; } var m='zona'; if($('d_linha')&&$('d_linha').checked)m='linha'; else if($('d_intruso')&&$('d_intruso').checked)m='zona'; else if($('m_heatmap')&&$('m_heatmap').checked)m='heatmap'; else if(($('m_piscina')&&$('m_piscina').checked)||($('m_guarda_piscina')&&$('m_guarda_piscina').checked))m='agua'; else if($('d_suspeito')&&$('d_suspeito').checked)m='vigilancia'; try{ zMode(m); }catch(e){} }
 function _anaLabel(k){ var lab=k; (DATA.modulos||[]).forEach(function(m){ (m.analiticos||[]).forEach(function(a){ if(a[0]===k)lab=a[1]; }); }); return lab; }
 function selAnaliticos(){ var out=[]; (DATA.modulos||[]).forEach(function(mod){ var mc=$('m_'+mod.key); if(!mc||!mc.checked)return;
   if(mod.pacote){ mod.analiticos.forEach(function(a){var e=$('d_'+a[0]); if(e&&e.checked)out.push(a[0]);}); }
@@ -6544,7 +6557,7 @@ function conf(id){ var c=CAMS.filter(function(x){return x.id===id})[0]; if(!c)re
   if(mod.pacote){ mod.analiticos.forEach(function(a){var e=$('d_'+a[0]); if(e)e.checked=!!aset[a[0]];}); var sb=$('sub_'+mod.key); if(sb)sb.style.display=active?'block':'none'; onSub(mod.key); } });
  $('a_placa_warn').style.display=c.ia_placa?'none':'block';
  $('ags').innerHTML=''; (((cfg&&cfg.horarios)||[])).forEach(function(h){ agRow(h); });
- $('a_limpar').style.display=cfg?'inline-block':'none'; computeCusto(); $('ov').classList.add('open'); }
+ var _sd=$('a_susp_dwell'); if(_sd)_sd.value=(cfg&&cfg.susp_dwell)?cfg.susp_dwell:180; $('a_limpar').style.display=cfg?'inline-block':'none'; computeCusto(); $('ov').classList.add('open'); }
 function fecha(){ $('ov').classList.remove('open'); }
 async function salvar(){ var c=CAMS.filter(function(x){return x.id===$('a_id').value})[0]; if(!c)return; var ana=[];
  DATA.modulos.forEach(function(mod){ var mc=$('m_'+mod.key); if(!mc||!mc.checked)return;
@@ -6553,7 +6566,14 @@ async function salvar(){ var c=CAMS.filter(function(x){return x.id===$('a_id').v
  var body={ camera_id:c.id, camera_nome:c.nome||'', ativo:$('a_ativo').checked, zonas_intrusao:(c.config&&c.config.zonas_intrusao)||[] };
  var _ags=readAgs(); var _sch={}; _ags.forEach(function(h){h.analiticos.forEach(function(a){_sch[a]=1;});});
  body.horarios=_ags; body.analiticos_padrao=ana.filter(function(a){return !_sch[a];});
- try{ await api('POST','/api/comercial/prov/analiticos/salvar',body); fecha(); msg('IA salva. Vale em ~2 min.',true); reload(); }catch(e){ msg('Erro ao salvar: '+e.message); } }
+ var _suspOn=($('d_suspeito')&&$('d_suspeito').checked); if(_suspOn){ body.susp_dwell=parseInt(($('a_susp_dwell')||{}).value,10)||180; }
+ var _hasVig=((c.config&&c.config.zonas_intrusao)||[]).some(function(z){return z.tipo==='vigilancia';});
+ try{ await api('POST','/api/comercial/prov/analiticos/salvar',body);
+   c.config=c.config||{}; c.config.ativo=body.ativo; c.config.horarios=body.horarios; c.config.analiticos_padrao=body.analiticos_padrao; c.config.zonas_intrusao=body.zonas_intrusao; if(_suspOn)c.config.susp_dwell=body.susp_dwell;
+   fecha();
+   if(_suspOn&&!_hasVig){ msg('Merodeio ligado - agora desenhe a ZONA DE VIGILANCIA (obrigatoria: sem ela o merodeio nao dispara).',true); try{ zonas(c.id); zMode('vigilancia'); }catch(e){} reload(); }
+   else { msg('IA salva. Vale em ~2 min.',true); reload(); }
+ }catch(e){ msg('Erro ao salvar: '+e.message); } }
 async function limpar(){ if(!confirm('Desligar a IA desta camera?'))return;
  try{ await api('POST','/api/comercial/prov/analiticos/limpar',{camera_id:$('a_id').value}); fecha(); msg('IA desligada.',true); reload(); }catch(e){ msg('Erro: '+e.message); } }
 async function toggleBusca(el){ var id=el.getAttribute('data-id'); var on=el.getAttribute('data-on')==='1';

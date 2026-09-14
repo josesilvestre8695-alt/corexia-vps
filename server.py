@@ -1053,13 +1053,13 @@ async def prov_cliente_criar_acesso(cid: str, req: Request):
                   "VALUES (?,?,?,?,?,?,?,?,?)",
                   (uid, email, _hash_pw(senha), nome, "cliente", pid, cid, "ativo", _now_iso()))
     c.commit(); c.close()
+    _prov = _get_entity("Provedor", pid) or {}
+    _dom = (_prov.get("dominio") or "").strip().rstrip("/")
+    portal = ("https://" + _dom + "/novo") if _dom else ((b.get("portal_url") or "").strip() or "https://grupocorexia.com.br/novo")
     wa = "nao_enviado"
     if b.get("enviar_whatsapp"):
         fone = (cli.get("telefone") or cli.get("whatsapp") or b.get("telefone") or "").strip()
         if fone:
-            _prov = _get_entity("Provedor", pid) or {}
-            _dom = (_prov.get("dominio") or "").strip().rstrip("/")
-            portal = ("https://" + _dom + "/novo") if _dom else ((b.get("portal_url") or "").strip() or "https://grupocorexia.com.br/novo")
             txt = ("Ola, " + nome + "! Seu acesso ao portal de monitoramento esta pronto.\n\n"
                    "Portal: " + portal + "\nLogin: " + email + "\nSenha: " + senha +
                    "\n\nDica: troque a senha no primeiro acesso.")
@@ -1070,7 +1070,7 @@ async def prov_cliente_criar_acesso(cid: str, req: Request):
                 wa = "falhou"
         else:
             wa = "sem_telefone"
-    return {"success": True, "reset": reset, "email": email, "senha": senha, "whatsapp": wa, "user_id": uid}
+    return {"success": True, "reset": reset, "email": email, "senha": senha, "whatsapp": wa, "user_id": uid, "portal": portal}
 
 
 @app.post("/api/demo/criar")
@@ -2133,7 +2133,7 @@ async def listar(req: Request):
             if _d.get("camera_id"):
                 cfg_by_cam[_d["camera_id"]] = {"ativo": _d.get("ativo", True),
                     "horarios": _d.get("horarios", []), "analiticos_padrao": _d.get("analiticos_padrao", []),
-                    "zonas_intrusao": _d.get("zonas_intrusao", []), "epi_itens": _d.get("epi_itens", []), "guarda_armado": bool(_d.get("guarda_armado", False))}
+                    "zonas_intrusao": _d.get("zonas_intrusao", []), "susp_dwell": _d.get("susp_dwell"), "epi_itens": _d.get("epi_itens", []), "guarda_armado": bool(_d.get("guarda_armado", False))}
         _c.close()
     except Exception as _e:
         print("[listarCamerasIA] cfg analitico:", _e)

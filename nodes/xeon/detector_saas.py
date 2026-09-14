@@ -1312,6 +1312,13 @@ def _susp_check(cam, predictions, frame_bgr, now):
     for z in (cam.get("config_analitico") or {}).get("zonas_intrusao", []) or []:
         if z.get("tipo") == "vigilancia" and len(z.get("pontos") or []) >= 3:
             area = z["pontos"]; break
+    _dwell_cam = SUSP_DWELL_SEC
+    try:
+        _dv = float((cam.get("config_analitico") or {}).get("susp_dwell"))
+        if _dv > 0:
+            _dwell_cam = _dv
+    except (TypeError, ValueError):
+        pass
     preds = predictions.get("predictions", []) if isinstance(predictions, dict) else []
     H, W = frame_bgr.shape[:2]
     cid = cam.get("id")
@@ -1338,11 +1345,11 @@ def _susp_check(cam, predictions, frame_bgr, now):
                 tk["crop"] = crop
             dwell = now - tk["first"]
             _spread = ((tk["maxx"] - tk["minx"]) ** 2 + (tk["maxy"] - tk["miny"]) ** 2) ** 0.5
-            if (susp_on and not tk["alerted"] and tk["hits"] >= SUSP_MIN_HITS and dwell >= SUSP_DWELL_SEC
+            if (susp_on and area is not None and not tk["alerted"] and tk["hits"] >= SUSP_MIN_HITS and dwell >= _dwell_cam
                     and (now - _susp_ultimo.get(cid, 0) >= SUSP_COOLDOWN)):
                 tk["alerted"] = True; _susp_ultimo[cid] = now
                 _susp_alerta(cam, area, frame_bgr, W, H, tk, dwell, now, "parado")
-            elif (susp_on and not tk.get("ronda_alerted") and tk["hits"] >= SUSP_MIN_HITS and dwell >= SUSP_RONDA_SEC
+            elif (susp_on and area is not None and not tk.get("ronda_alerted") and tk["hits"] >= SUSP_MIN_HITS and dwell >= SUSP_RONDA_SEC
                     and tk["path"] >= SUSP_RONDA_PATH and _spread <= SUSP_RONDA_SPREAD
                     and tk["path"] >= SUSP_RONDA_RATIO * max(_spread, 0.05)
                     and (now - _susp_ultimo.get(cid, 0) >= SUSP_COOLDOWN)):
