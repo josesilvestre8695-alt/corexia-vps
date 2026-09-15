@@ -3945,6 +3945,9 @@ async def chamado_update(cid: str, req: Request):
     if not _scope_ok("Chamado", o, u):
         c.close(); return _forbidden()
     b = await req.json()
+    _resp_media = b.get("resposta_media") or ""
+    _resp_kind = "video" if (b.get("resposta_media_kind") == "video") else "image"
+    _resp_mime = (b.get("resposta_media_mime") or "").strip()
     cur = json.loads(r["data"])
     # autor = quem abriu (por id; fallback por tenant p/ chamados antigos sem aberto_por_id)
     is_author = cur.get("aberto_por_id") == u["id"] or (
@@ -3977,6 +3980,17 @@ async def chamado_update(cid: str, req: Request):
             cur["status"] = b["status"]
     else:
         c.close(); return _forbidden()
+    if respondeu and _resp_media:
+        try:
+            import base64 as _b64
+            _mdir = os.path.join(HERE, "chamado_media", cid)
+            os.makedirs(_mdir, exist_ok=True)
+            _mname = "resp_%s.%s" % (secrets.token_hex(4), "mp4" if _resp_kind == "video" else "jpg")
+            with open(os.path.join(_mdir, _mname), "wb") as _mf:
+                _mf.write(_b64.b64decode(_resp_media))
+            cur["resposta_midia"] = {"kind": _resp_kind, "arquivo": _mname, "em": _now_iso()}
+        except Exception as _e:
+            print("[chamado-midia] erro:", _e)
     now = _now_iso()
     c.execute("UPDATE entities SET data=?, updated_date=? WHERE entity='Chamado' AND id=?",
               (json.dumps(cur), now, cid)); c.commit(); c.close()
@@ -4031,7 +4045,10 @@ async def chamado_update(cid: str, req: Request):
                     else:
                         _t = "Seu chamado foi reaberto e esta sendo analisado novamente."
                     try:
-                        _com._zapi_send(_tel, _t, _zi, _zt, _zc)
+                        if _k == "resp" and _resp_media:
+                            _com._zapi_send_media(_tel, _t, _resp_media, _resp_kind, _resp_mime, _zi, _zt, _zc)
+                        else:
+                            _com._zapi_send(_tel, _t, _zi, _zt, _zc)
                     except Exception:
                         pass
     except Exception as _e:

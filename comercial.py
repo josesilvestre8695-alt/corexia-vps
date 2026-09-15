@@ -57,6 +57,27 @@ def _zapi_send(numero, texto, inst=None, tok=None, cli=None):
     except Exception as e:
         return False, str(e)[:150]
 
+
+def _zapi_send_media(numero, caption, media_b64, kind="image", mime=None, inst=None, tok=None, cli=None):
+    """Envia imagem/video (base64) via Z-API. kind='image'|'video'. Sem midia -> cai no texto."""
+    inst = inst or ZAPI_INSTANCE; tok = tok or ZAPI_TOKEN; cli = cli or ZAPI_CLIENT
+    if not (inst and tok):
+        return False, "zapi nao configurado"
+    if not media_b64:
+        return _zapi_send(numero, caption, inst, tok, cli)
+    try:
+        if kind == "video":
+            ep, field, mime = "send-video", "video", (mime or "video/mp4")
+        else:
+            ep, field, mime = "send-image", "image", (mime or "image/jpeg")
+        body = {"phone": _num(numero), field: "data:%s;base64,%s" % (mime, media_b64), "caption": caption}
+        r = requests.post("https://api.z-api.io/instances/%s/token/%s/%s" % (inst, tok, ep),
+                          timeout=60, headers={"Content-Type": "application/json", "Client-Token": cli or ""},
+                          json=body)
+        return r.ok, (r.text or "")[:150]
+    except Exception as e:
+        return False, str(e)[:150]
+
 # (slug, label, titulo, roles_que_veem_no_menu)
 # admin (Corexia): os "clientes" da Corexia SAO os provedores -> admin NAO tem aba Clientes.
 # provedor: gerencia os clientes finais DELE -> tem Clientes, nao tem Provedor/Revenda nem Planos.
@@ -6866,6 +6887,7 @@ _PROV_CHAMADOS_BODY = """
 <div class="ov" id="ovr"><div class="modal" style="max-width:560px"><h2>Responder cliente</h2>
  <div id="rinfo" style="font-size:13px;color:var(--muted);margin-bottom:10px;line-height:1.5"></div>
  <div class="fld"><label>Resposta ao cliente</label><textarea id="r_txt" rows="5" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--ink);padding:10px;font-size:14px;resize:vertical"></textarea></div>
+ <div class="fld"><label>Anexar imagem ou video (opcional)</label><input type="file" id="r_media" accept="image/*,video/*" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--ink);padding:9px;font-size:13px"><div style="font-size:11px;color:var(--muted);margin-top:4px">Vai junto com a resposta no WhatsApp do cliente. Max 15 MB.</div></div>
  <div class="foot"><button onclick="fechaR()">Cancelar</button><button class="btn-primary" onclick="enviarResp()">Enviar resposta</button></div></div></div>
 <script>
 var ALL=[], V='cli'; window.PAGE_INIT=load;
@@ -6890,9 +6912,9 @@ function render(){
 function novo(){ $('c_tipo').value='suporte'; $('c_desc').value=''; $('ov').classList.add('open'); }
 function fecha(){ $('ov').classList.remove('open'); }
 async function enviar(){ var b={tipo:$('c_tipo').value,descricao:$('c_desc').value.trim()}; if(!b.descricao){ msg('Descreva sua solicitacao.'); return; } try{ await api('POST','/api/chamados',b); fecha(); msg('Chamado enviado a Corexia!',true); load(); }catch(e){ msg('Erro: '+e.message); } }
-function resp(i){ var c=ALL[i]; if(!c)return; window.__c=c; $('rinfo').innerHTML='<b>'+esc(c.cliente_nome||c.aberto_por_nome||'')+'</b> &middot; '+esc(fone(c.telefone))+'<br>'+esc(c.descricao||''); $('r_txt').value=c.resposta||''; $('ovr').classList.add('open'); }
+function resp(i){ var c=ALL[i]; if(!c)return; window.__c=c; $('rinfo').innerHTML='<b>'+esc(c.cliente_nome||c.aberto_por_nome||'')+'</b> &middot; '+esc(fone(c.telefone))+'<br>'+esc(c.descricao||''); $('r_txt').value=c.resposta||''; if($('r_media'))$('r_media').value=''; $('ovr').classList.add('open'); }
 function fechaR(){ $('ovr').classList.remove('open'); }
-async function enviarResp(){ var c=window.__c; if(!c)return; var t=$('r_txt').value.trim(); if(!t){ msg('Escreva a resposta.'); return; } try{ await api('PUT','/api/chamados/'+c.id,{resposta:t,status:'em_andamento'}); fechaR(); msg('Resposta enviada ao cliente.',true); load(); }catch(e){ msg('Erro: '+e.message); } }
+async function enviarResp(){ var c=window.__c; if(!c)return; var t=$('r_txt').value.trim(); var f=($('r_media')&&$('r_media').files[0])||null; if(!t && !f){ msg('Escreva a resposta ou anexe uma midia.'); return; } var body={resposta:t,status:'em_andamento'}; if(f){ if(f.size>15*1024*1024){ msg('Essa midia tem '+(f.size/1048576).toFixed(1)+' MB — o maximo permitido e 15 MB. Reduza ou corte o arquivo e tente de novo.'); return; } var b64=''; try{ b64=await new Promise(function(res,rej){ var rd=new FileReader(); rd.onload=function(){ res((''+(rd.result||'')).split(',')[1]||''); }; rd.onerror=function(){ rej(new Error('falha')); }; rd.readAsDataURL(f); }); }catch(e){ msg('Erro ao ler o arquivo.'); return; } body.resposta_media=b64; body.resposta_media_kind=(f.type.indexOf('video')===0?'video':'image'); body.resposta_media_mime=f.type||''; } try{ await api('PUT','/api/chamados/'+c.id,body); fechaR(); msg('Resposta enviada ao cliente.',true); if($('r_media'))$('r_media').value=''; load(); }catch(e){ msg('Erro: '+e.message); } }
 async function concl(i){ var c=ALL[i]; if(!c)return; if(!confirm('Concluir este chamado?'))return; try{ await api('PUT','/api/chamados/'+c.id,{status:'resolvido'}); msg('Chamado concluido.',true); load(); }catch(e){ msg('Erro: '+e.message); } }
 async function reab(i){ var c=ALL[i]; if(!c)return; try{ await api('PUT','/api/chamados/'+c.id,{status:'aberto'}); msg('Chamado reaberto.',true); load(); }catch(e){ msg('Erro: '+e.message); } }
 </script>

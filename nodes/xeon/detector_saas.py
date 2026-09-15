@@ -552,6 +552,9 @@ def _tipo_ativo_na_cam(cam, tipo, now_ts):
 # ---------- ZONA DE INTRUSAO / LINHA VIRTUAL (por presenca de PESSOA; sem rastreio) ----------
 _zona_ultimo = {}   # (cam_id, "zona:<nome>") -> ts do ultimo alerta
 ZONA_COOLDOWN  = int(os.getenv("ZONA_COOLDOWN", "60"))       # 1 alerta por zona/cam a cada Xs
+ZONA_DWELL_SEC = float(os.getenv("ZONA_DWELL_SEC", "2.5").replace(",", "."))  # presenca continua na zona antes de alarmar (mata blip de galho/sombra)
+ZONA_PRES_GAP  = float(os.getenv("ZONA_PRES_GAP", "1.5").replace(",", "."))   # tolerancia de gap p/ manter a presenca continua
+_zona_pres = {}   # (cam_id, "zona:<nome>") -> {"since": ts, "last": ts}
 ZONA_LINHA_TOL = float(os.getenv("ZONA_LINHA_TOL", "0.035").replace(",", "."))  # dist. (frac) p/ "pisar" na linha
 
 # rastreio por pessoa p/ CRUZAMENTO de linha (direcional) - reaproveita o padrao dos _susp_tracks
@@ -559,6 +562,7 @@ _line_tracks = {}   # cid -> [ {id, cx, cy, last, hits} ]
 _line_tid = {}
 LINE_TRACK_TOL = float(os.getenv("LINE_TRACK_TOL", "0.14").replace(",", "."))  # casa pessoa<->track (frac)
 LINE_GAP_SEC   = float(os.getenv("LINE_GAP_SEC", "3").replace(",", "."))       # some > Xs -> track encerra
+LINE_CROSS_MARGIN = float(os.getenv("LINE_CROSS_MARGIN", "0.035").replace(",", "."))  # dist. perp. minima dos 2 lados p/ contar travessia (mata "raspou na linha")
 
 
 def _seg_side(ax, ay, bx, by, px, py):
@@ -591,15 +595,22 @@ def _linha_cross_check(cam, linhas, persons, frame_bgr, now):
             for z in linhas:
                 pts = z.get("pontos") or []
                 (ax, ay), (bx, by) = pts[0], pts[1]
-                if _segs_cross(ax, ay, bx, by, px, py, fx, fy):
-                    direc = (z.get("direcao") or "ambos")
-                    _lado_prev = _seg_side(ax, ay, bx, by, px, py)   # de que lado a pessoa VINHA
-                    if direc in ("seta", "pos") and _lado_prev >= 0:
-                        continue   # so conta quem ENTRA no lado + (tinha de vir do lado -)
-                    if direc == "neg" and _lado_prev <= 0:
-                        continue   # so conta quem ENTRA no lado - (tinha de vir do lado +)
-                    nome = z.get("nome") or "linha"
-                    _zona_alerta(cam, "Cruzou a linha '%s'" % nome, z, pp, frame_bgr, now, nome)
+                if not _segs_cross(ax, ay, bx, by, px, py, fx, fy):
+                    continue
+                _seglen = ((bx - ax) ** 2 + (by - ay) ** 2) ** 0.5 or 1e-9
+                _dp = _seg_side(ax, ay, bx, by, px, py) / _seglen   # dist. perp. (frac) do ponto ANTERIOR
+                _dc = _seg_side(ax, ay, bx, by, fx, fy) / _seglen   # dist. perp. do ponto ATUAL
+                # travessia CLARA: os dois pontos afastados da linha (margem) e em lados opostos.
+                # mata o falso de quem so "raspa"/treme perto da linha (ex.: pessoa ocluida atras do muro).
+                if abs(_dp) < LINE_CROSS_MARGIN or abs(_dc) < LINE_CROSS_MARGIN:
+                    continue
+                direc = (z.get("direcao") or "ambos")
+                if direc in ("seta", "pos") and _dp >= 0:
+                    continue   # so quem ENTRA no lado + (tinha de vir do lado -)
+                if direc == "neg" and _dp <= 0:
+                    continue   # so quem ENTRA no lado - (tinha de vir do lado +)
+                nome = z.get("nome") or "linha"
+                _zona_alerta(cam, "Cruzou a linha '%s'" % nome, z, pp, frame_bgr, now, nome)
             tk["cx"], tk["cy"], tk["last"] = fx, fy, now; tk["hits"] = tk.get("hits", 1) + 1
         else:
             _line_tid[cid] = _line_tid.get(cid, 0) + 1
@@ -668,14 +679,22 @@ def _zona_check(cam, predictions, frame_bgr, now):
     preds = predictions.get("predictions", []) if isinstance(predictions, dict) else []
     H, W = frame_bgr.shape[:2]
     persons = _person_pts(preds, W, H)
-    # ZONA (poligono): alerta por presenca dentro
+    # ZONA (poligono): alerta por PRESENCA CONTINUA (>= ZONA_DWELL_SEC) — filtra blip de galho/sombra
     if intruso_on and persons:
         for z in zonas:
             if z.get("tipo", "zona") == "zona" and len(z.get("pontos") or []) >= 3:
                 nome = z.get("nome") or "zona"
                 hit = next((pp for (fx, fy, pp) in persons if _pt_in_poly(fx, fy, z["pontos"])), None)
+                _pk = (cam.get("id"), "zona:" + nome)
                 if hit is not None:
-                    _zona_alerta(cam, "Intruso na zona '%s'" % nome, z, hit, frame_bgr, now, nome)
+                    _st = _zona_pres.get(_pk)
+                    if _st is None or (now - _st["last"] > ZONA_PRES_GAP):
+                        _st = {"since": now, "last": now}   # presenca nova
+                    else:
+                        _st["last"] = now                   # presenca continuando
+                    _zona_pres[_pk] = _st
+                    if (now - _st["since"]) >= ZONA_DWELL_SEC:
+                        _zona_alerta(cam, "Intruso na zona '%s'" % nome, z, hit, frame_bgr, now, nome)
     # LINHA: cruzamento (segmento de movimento x linha) com direcao opcional
     if linha_on:
         linhas = [z for z in zonas if z.get("tipo") == "linha" and len(z.get("pontos") or []) >= 2]
