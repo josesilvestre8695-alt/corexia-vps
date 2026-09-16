@@ -7111,6 +7111,7 @@ _MONIT_BODY = """
 <div class="cards" style="margin-bottom:14px">
  <div class="kpi"><div class="k">Cameras</div><div class="v" id="k_cams">-</div></div>
  <div class="kpi"><div class="k">Online</div><div class="v" id="k_on" style="color:var(--ok)">-</div></div>
+ <div class="kpi" id="k_off_card" onclick="abrirOffline()" style="cursor:pointer" title="Ver cameras offline"><div class="k">Offline</div><div class="v" id="k_off" style="color:var(--muted)">-</div></div>
  <div class="kpi"><div class="k">Alertas hoje</div><div class="v" id="k_hoje" style="color:var(--accent)">-</div></div>
  <div class="kpi"><div class="k">Alertas novos</div><div class="v" id="k_nv" style="color:var(--bad)">-</div></div>
 </div>
@@ -7131,6 +7132,11 @@ _MONIT_BODY = """
  <div style="position:relative;padding-top:56.25%;background:#000;border-radius:8px;overflow:hidden"><iframe id="lv_frame" src="about:blank" allow="autoplay; fullscreen" style="position:absolute;inset:0;width:100%;height:100%;border:0"></iframe></div>
  <div style="font-size:12px;color:var(--muted);margin-top:8px">Se nao carregar, <a id="lv_link" href="#" target="_blank" rel="noopener" style="color:var(--accent)">abra em nova aba</a>.</div>
 </div></div>
+<div class="ov" id="ovoff"><div class="modal" style="max-width:560px;width:100%">
+ <h2 style="display:flex;align-items:center;gap:10px">Cameras offline <span id="off_n" class="pill off" style="font-size:12px"></span><span style="flex:1"></span><button onclick="fecharOffline()">Fechar</button></h2>
+ <div style="font-size:12px;color:var(--muted);margin:-4px 0 10px">Atualiza sozinho a cada 20s. Uma camera aqui esta sem transmitir agora - verifique internet, energia ou a camera no local.</div>
+ <div id="off_list" style="max-height:60vh;overflow:auto"></div>
+</div></div>
 <style>.ck{display:flex;gap:6px;align-items:center;color:var(--ink);cursor:pointer}.ck input{width:auto}
 .mcard{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;cursor:pointer}
 .mthumb{position:relative;padding-top:56.25%;background:#0b0d12}
@@ -7148,6 +7154,7 @@ async function load(){ try{
   var d=await api('GET','/api/comercial/prov/cameras'); CAMS=d.cameras||[];
   $('k_cams').textContent=CAMS.length;
   $('k_on').textContent=CAMS.filter(function(c){return (c.status||'').toLowerCase()==='online';}).length;
+  renderOffline();
   renderWall(); initMap();
   var r=await api('GET','/api/comercial/prov/alertas/resumo'); $('k_hoje').textContent=r.hoje; $('k_nv').textContent=r.novos;
   var a=await api('GET','/api/comercial/prov/alertas?limit=12'); renderFeed(a);
@@ -7218,6 +7225,30 @@ function _cxCluster(cb){
 }
 function beep(){ try{ var A=window.AudioContext||window.webkitAudioContext; if(!A)return; var a=new A(); var o=a.createOscillator(),g=a.createGain(); o.connect(g); g.connect(a.destination); o.type='sine'; o.frequency.value=880; g.gain.value=0.08; o.start(); setTimeout(function(){o.stop();a.close();},350);}catch(e){} }
 function fala(t){ try{ if($('som').checked&&window.speechSynthesis){ var u=new SpeechSynthesisUtterance('Alerta: '+t); u.lang='pt-BR'; window.speechSynthesis.speak(u);} }catch(e){} }
+function offCams(){ return CAMS.filter(function(c){return (c.status||'').toLowerCase()!=='online';}); }
+function renderOffline(){
+  var off=offCams(); var el=$('k_off'); if(el){ el.textContent=off.length; el.style.color=off.length?'var(--bad)':'var(--muted)'; }
+  var card=$('k_off_card'); if(card){ card.style.boxShadow=off.length?'inset 0 0 0 1px var(--bad)':'none'; }
+  if($('ovoff') && $('ovoff').classList.contains('open')) fillOffline();
+}
+function fillOffline(){
+  var off=offCams(); var n=$('off_n'); if(n) n.textContent=off.length;
+  var box=$('off_list'); if(!box) return;
+  if(!off.length){ box.innerHTML='<div class="center" style="padding:24px;color:var(--ok)">Tudo online agora. Nenhuma camera offline.</div>'; return; }
+  off.sort(function(a,b){ return (a.cliente_nome||'').localeCompare(b.cliente_nome||''); });
+  box.innerHTML=off.map(function(c){
+    return '<div class="frow" data-cam="'+esc(c.id)+'" style="align-items:center;cursor:pointer">'+
+      '<span class="pill off" style="font-size:10px;flex:none">offline</span>'+
+      '<div style="min-width:0;flex:1"><div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(c.nome||'-')+'</div>'+
+      (c.cliente_nome?'<div style="color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(c.cliente_nome)+'</div>':'')+'</div></div>';
+  }).join('');
+}
+function abrirOffline(){
+  var box=$('off_list');
+  if(box && !box._bound){ box._bound=true; box.addEventListener('click',function(e){ var r=e.target.closest('[data-cam]'); if(r) ver(r.getAttribute('data-cam')); }); }
+  fillOffline(); $('ovoff').classList.add('open');
+}
+function fecharOffline(){ $('ovoff').classList.remove('open'); }
 setInterval(function(){ if($('auto')&&$('auto').checked) load(); },20000);
 </script>
 """
