@@ -2108,21 +2108,21 @@ _PROV_DEMO_BODY = """
 </div>
 
 <div class="ovd" id="ovd"><div class="ovdbox">
- <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0;font-size:17px">Novo Acesso Demonstrador</h3><button class="act" onclick="fechaNovo()" style="font-size:16px">&times;</button></div>
+ <div style="display:flex;justify-content:space-between;align-items:center"><h3 id="d_title" style="margin:0;font-size:17px">Novo Acesso Demonstrador</h3><button class="act" onclick="fechaNovo()" style="font-size:16px">&times;</button></div>
  <p style="color:var(--muted);font-size:12.5px;margin:4px 0 14px">Cria um login temporario de visualizacao. O demonstrador ve apenas as cameras selecionadas ate a data de expiracao.</p>
  <div class="two">
   <div class="fld"><label>Nome do demonstrador</label><input id="d_nome" placeholder="Ex: Prospect Mercado Boa Vista"></div>
   <div class="fld"><label>E-mail (login)</label><input id="d_email" type="email" placeholder="prospect@exemplo.com"></div>
  </div>
  <div class="two">
-  <div class="fld"><label>Senha</label><div style="display:flex;gap:8px"><input id="d_senha" style="flex:1"><button class="act" type="button" onclick="gerarSenha()">gerar</button></div></div>
-  <div class="fld"><label>Duracao</label><select id="d_dur" onchange="calcExp()"><option value="7">7 dias</option><option value="30">30 dias</option><option value="90">3 meses</option><option value="180">6 meses</option><option value="365">12 meses</option></select><div id="d_exp" style="color:var(--muted);font-size:12px;margin-top:5px"></div></div>
+  <div class="fld"><label>Senha <span id="d_pwhint" style="color:var(--muted);font-size:11px;display:none">(deixe em branco para manter)</span></label><div style="display:flex;gap:8px"><input id="d_senha" style="flex:1"><button class="act" type="button" onclick="gerarSenha()">gerar</button></div></div>
+  <div class="fld"><label>Duracao</label><select id="d_dur" onchange="calcExp()"><option value="" id="d_dur_keep" style="display:none">Manter data atual</option><option value="7">7 dias</option><option value="30">30 dias</option><option value="90">3 meses</option><option value="180">6 meses</option><option value="365">12 meses</option></select><div id="d_exp" style="color:var(--muted);font-size:12px;margin-top:5px"></div></div>
  </div>
  <div class="fld"><label>Cameras <span id="d_cont" style="color:var(--accent)">(0/4)</span> &mdash; maximo 4</label>
   <input id="d_busca" placeholder="buscar por nome ou endereco..." oninput="renderCams()">
   <div id="camlist" style="max-height:240px;overflow:auto;border:1px solid var(--border);border-radius:9px;margin-top:6px"></div>
  </div>
- <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px"><button onclick="fechaNovo()">Cancelar</button><button class="btn-primary" onclick="conceder()">Conceder Acesso</button></div>
+ <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px"><button onclick="fechaNovo()">Cancelar</button><button class="btn-primary" id="d_btn" onclick="salvar()">Conceder Acesso</button></div>
 </div></div>
 
 <style>
@@ -2137,7 +2137,7 @@ _PROV_DEMO_BODY = """
 </style>
 <script>
 window.PAGE_INIT=load;
-var CAMS=[], SEL=[], ACC=[];
+var CAMS=[], SEL=[], ACC=[], EDIT_ID=null;
 function load(){ carregaCams(); carregaLista(); }
 async function carregaCams(){ try{ CAMS=(await api('GET','/api/entities/Camera'))||[]; }catch(e){ CAMS=[]; } }
 async function carregaLista(){ try{ var r=await api('GET','/api/prov/demo/listar'); ACC=r.acessos||[]; render(); }catch(e){ msg('Erro: '+e.message); } }
@@ -2150,19 +2150,24 @@ function render(){ var at=0,ex=0; ACC.forEach(function(a){ if(a.status==='ativo'
   return '<tr><td><b>'+esc(a.user_nome||'-')+'</b><div style="color:var(--muted);font-size:12px">'+esc(a.user_email||'')+'</div></td>'+
    '<td>'+((a.cameras||[]).length)+' cam'+(cn?('<div style="color:var(--muted);font-size:11.5px">'+esc(cn)+'</div>'):'')+'</td>'+
    '<td>'+dtb(a.expira)+'</td><td>'+bd+'</td>'+
-   '<td style="text-align:right">'+(a.status==='ativo'?'<button class="act" style="color:var(--bad)" data-rev="'+esc(a.id)+'">revogar</button>':'')+'</td></tr>';
+   '<td style="text-align:right;white-space:nowrap"><button class="act" data-edit="'+esc(a.id)+'">editar</button> '+(a.status==='ativo'?'<button class="act" style="color:#f59e0b" data-rev="'+esc(a.id)+'">revogar</button> ':'')+'<button class="act" style="color:var(--bad)" data-del="'+esc(a.id)+'">excluir</button></td></tr>';
  }).join('')||'<tr><td colspan="5" class="center">Nenhum acesso demo ainda.</td></tr>'; }
-function abreNovo(){ $('d_nome').value=''; $('d_email').value=''; $('d_senha').value=''; $('d_dur').value='7'; $('d_busca').value=''; SEL=[]; calcExp(); renderCams(); $('ovd').classList.add('open'); }
+function abreNovo(){ EDIT_ID=null; $('d_title').textContent='Novo Acesso Demonstrador'; $('d_btn').textContent='Conceder Acesso'; $('d_dur_keep').style.display='none'; $('d_pwhint').style.display='none'; $('d_nome').value=''; $('d_email').value=''; $('d_senha').value=''; $('d_dur').value='7'; $('d_busca').value=''; SEL=[]; calcExp(); renderCams(); $('ovd').classList.add('open'); }
+function abreEditar(id){ var a=null; for(var i=0;i<ACC.length;i++){ if(ACC[i].id===id){ a=ACC[i]; break; } } if(!a){ msg('Acesso nao encontrado.'); return; }
+ EDIT_ID=id; $('d_title').textContent='Editar Acesso Demonstrador'; $('d_btn').textContent='Salvar alteracoes'; $('d_dur_keep').style.display=''; $('d_pwhint').style.display='';
+ $('d_nome').value=a.user_nome||''; $('d_email').value=a.user_email||''; $('d_senha').value=''; $('d_dur').value=''; $('d_busca').value=''; SEL=(a.cameras||[]).slice(0,4); calcExp(); renderCams(); $('ovd').classList.add('open'); }
 function fechaNovo(){ $('ovd').classList.remove('open'); }
 function gerarSenha(){ $('d_senha').value='Demo'+Math.floor(1000+Math.random()*9000); }
-function calcExp(){ var d=parseInt($('d_dur').value||7); var t=new Date(); t.setDate(t.getDate()+d); $('d_exp').textContent='Expira em '+dtb(t.toISOString()); }
+function calcExp(){ var v=$('d_dur').value; if(!v){ $('d_exp').textContent='Mantem a data de expiracao atual.'; return; } var d=parseInt(v||7); var t=new Date(); t.setDate(t.getDate()+d); $('d_exp').textContent='Expira em '+dtb(t.toISOString()); }
 function renderCams(){ var q=($('d_busca').value||'').toLowerCase();
  var arr=CAMS.filter(function(c){ var nm=((c.nome||c.name||'')+' '+(c.endereco||c.local||'')).toLowerCase(); return !q||nm.indexOf(q)>=0; }).slice(0,60);
  $('camlist').innerHTML=arr.map(function(c){ var s=SEL.indexOf(c.id)>=0; return '<div class="camrow'+(s?' sel':'')+'" data-id="'+esc(c.id)+'"><input type="checkbox" '+(s?'checked':'')+' style="width:auto" tabindex="-1"><div><b>'+esc(c.nome||c.name||'camera')+'</b><div style="color:var(--muted);font-size:11px">'+esc(c.endereco||c.local||'')+'</div></div></div>'; }).join('')||'<div class="center" style="padding:16px;color:var(--muted)">Nenhuma camera encontrada.</div>';
  $('d_cont').textContent='('+SEL.length+'/4)'; }
 document.addEventListener('click',function(e){
- var rv=(e.target&&e.target.getAttribute)?e.target.getAttribute('data-rev'):null;
- if(rv){ revogar(rv); return; }
+ var _g=(e.target&&e.target.getAttribute)?e.target:null;
+ var rv=_g?_g.getAttribute('data-rev'):null; if(rv){ revogar(rv); return; }
+ var ed=_g?_g.getAttribute('data-edit'):null; if(ed){ abreEditar(ed); return; }
+ var dl=_g?_g.getAttribute('data-del'):null; if(dl){ excluir(dl); return; }
  var row=e.target.closest?e.target.closest('.camrow'):null;
  if(row&&document.getElementById('camlist')&&document.getElementById('camlist').contains(row)){
   var id=row.getAttribute('data-id'); var i=SEL.indexOf(id);
@@ -2170,11 +2175,19 @@ document.addEventListener('click',function(e){
   renderCams();
  }
 });
-async function conceder(){ var b={full_name:$('d_nome').value.trim(),email:$('d_email').value.trim(),password:$('d_senha').value,dias:parseInt($('d_dur').value||7),cameras:SEL};
- if(!b.email||(''+b.password).length<4){ msg('Informe e-mail e senha (min 4).'); return; }
+async function salvar(){ var nome=$('d_nome').value.trim(), email=$('d_email').value.trim(), pw=$('d_senha').value, dur=$('d_dur').value;
  if(!SEL.length){ msg('Escolha de 1 a 4 cameras.'); return; }
- try{ var r=await api('POST','/api/prov/demo/criar',b); fechaNovo(); msg('Acesso concedido ate '+dtb(r.expira)+'.',true); carregaLista(); }catch(e){ msg('Erro: '+e.message); } }
+ if(EDIT_ID){
+  var eb={full_name:nome,email:email,cameras:SEL}; if(pw)eb.password=pw; if(dur)eb.dias=parseInt(dur);
+  try{ await api('PUT','/api/prov/demo/'+EDIT_ID,eb); fechaNovo(); msg('Alteracoes salvas.',true); carregaLista(); }catch(e){ msg('Erro: '+e.message); }
+ } else {
+  if(!email||(''+pw).length<4){ msg('Informe e-mail e senha (min 4).'); return; }
+  var nb={full_name:nome,email:email,password:pw,dias:parseInt(dur||7),cameras:SEL};
+  try{ var r=await api('POST','/api/prov/demo/criar',nb); fechaNovo(); msg('Acesso concedido ate '+dtb(r.expira)+'.',true); carregaLista(); }catch(e){ msg('Erro: '+e.message); }
+ }
+}
 async function revogar(id){ if(!confirm('Revogar este acesso demo? O login perde acesso imediatamente.'))return; try{ await api('POST','/api/prov/demo/'+id+'/revogar'); msg('Acesso revogado.',true); carregaLista(); }catch(e){ msg('Erro: '+e.message); } }
+async function excluir(id){ if(!confirm('Excluir definitivamente este acesso demo? O login sera apagado e o e-mail liberado para reuso.'))return; try{ await api('DELETE','/api/prov/demo/'+id); msg('Acesso excluido.',true); carregaLista(); }catch(e){ msg('Erro: '+e.message); } }
 </script>
 """
 

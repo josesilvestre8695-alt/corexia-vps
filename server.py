@@ -895,6 +895,98 @@ async def prov_demo_revogar(eid: str, req: Request):
     return {"success": True}
 
 
+@app.put("/api/prov/demo/{eid}")
+async def prov_demo_editar(eid: str, req: Request):
+    u = current_user(req)
+    if not (u and u["role"] == "provedor" and u.get("provedor_id")):
+        return _forbidden()
+    pid = u["provedor_id"]
+    b = await req.json()
+    c = db()
+    r = c.execute("SELECT data FROM entities WHERE entity='AcessoDemo' AND id=?", (eid,)).fetchone()
+    if not r:
+        c.close(); return JSONResponse({"error": "nao encontrado"}, status_code=404)
+    d = json.loads(r["data"])
+    if d.get("provedor_id") != pid:
+        c.close(); return _forbidden()
+    uid = d.get("user_id")
+    if "cameras" in b:
+        cams = [str(x) for x in (b.get("cameras") or [])][:4]
+        meus = set()
+        for rr in c.execute("SELECT id, data FROM entities WHERE entity='Camera'").fetchall():
+            try:
+                if json.loads(rr["data"]).get("provedor_id") == pid:
+                    meus.add(rr["id"])
+            except Exception:
+                pass
+        cams = [x for x in cams if x in meus]
+        if not cams:
+            c.close(); return JSONResponse({"error": "escolha de 1 a 4 cameras do seu provedor"}, status_code=400)
+        d["cameras"] = cams
+    nome = (b.get("full_name") or b.get("nome") or "").strip()
+    if nome:
+        d["user_nome"] = nome
+    novo_email = (b.get("email") or "").strip().lower()
+    email_changed = bool(novo_email) and novo_email != (d.get("user_email") or "").lower()
+    hoje = datetime.now().strftime("%Y-%m-%d")
+    dias = 0
+    if b.get("dias") not in (None, ""):
+        try:
+            dias = int(b.get("dias"))
+        except (TypeError, ValueError):
+            dias = 0
+    if dias > 0:
+        d["expira"] = (datetime.now() + timedelta(days=dias)).strftime("%Y-%m-%d")
+    # editar SEMPRE reativa o acesso; se estiver vencido e sem nova duracao, exige duracao
+    if str(d.get("expira") or "") < hoje and dias <= 0:
+        c.close(); return JSONResponse({"error": "acesso vencido: escolha uma nova duracao"}, status_code=400)
+    d["status"] = "ativo"
+    pw = b.get("password") or ""
+    sets = []; args = []
+    if nome:
+        sets.append("full_name=?"); args.append(nome)
+    if email_changed:
+        sets.append("email=?"); args.append(novo_email)
+    if pw:
+        if len(pw) < 4:
+            c.close(); return JSONResponse({"error": "senha minima de 4 caracteres"}, status_code=400)
+        sets.append("password_hash=?"); args.append(_hash_pw(pw))
+    if d.get("status") == "ativo":
+        sets.append("status=?"); args.append("ativo")
+    if sets and uid:
+        try:
+            c.execute("UPDATE users SET " + ",".join(sets) + " WHERE id=?", tuple(args) + (uid,))
+        except sqlite3.IntegrityError:
+            c.close(); return JSONResponse({"error": "email ja cadastrado"}, status_code=409)
+    if email_changed:
+        d["user_email"] = novo_email
+    c.execute("UPDATE entities SET data=?, updated_date=? WHERE entity='AcessoDemo' AND id=?", (json.dumps(d), _now_iso(), eid))
+    c.commit(); c.close()
+    return {"success": True, "expira": d.get("expira"), "status": d.get("status")}
+
+
+@app.delete("/api/prov/demo/{eid}")
+async def prov_demo_excluir(eid: str, req: Request):
+    u = current_user(req)
+    if not (u and u["role"] == "provedor" and u.get("provedor_id")):
+        return _forbidden()
+    pid = u["provedor_id"]
+    c = db()
+    r = c.execute("SELECT data FROM entities WHERE entity='AcessoDemo' AND id=?", (eid,)).fetchone()
+    if not r:
+        c.close(); return JSONResponse({"error": "nao encontrado"}, status_code=404)
+    d = json.loads(r["data"])
+    if d.get("provedor_id") != pid:
+        c.close(); return _forbidden()
+    uid = d.get("user_id")
+    if uid:
+        c.execute("DELETE FROM sessions WHERE user_id=?", (uid,))
+        c.execute("DELETE FROM users WHERE id=? AND role='cliente'", (uid,))
+    c.execute("DELETE FROM entities WHERE entity='AcessoDemo' AND id=?", (eid,))
+    c.commit(); c.close()
+    return {"success": True}
+
+
 def _prov_owner(uid):
     """True se o user e o DONO do painel do provedor (equipe=0/NULL)."""
     c = db()
@@ -1786,6 +1878,25 @@ def envia_whatsapp(numero, caption, img_b64=None, provedor_id=None):
     return _evolution(numero, caption, img_b64)
 
 
+def _cliente_bloqueado(cliente_id, provedor_id=""):
+    """True se NAO deve mandar alerta de IA pro cliente:
+    - o proprio Cliente esta 'bloqueado' (inadimplencia / suspensao manual), OU
+    - o Provedor dono esta 'bloqueado' (servico suspenso -> clientes tb sem servico).
+    Fail-open: em erro/entidade ausente retorna False (mantem comportamento atual)."""
+    try:
+        if cliente_id:
+            cli = _get_entity("Cliente", cliente_id) or {}
+            if (cli.get("status") or "ativo") == "bloqueado":
+                return True
+        if provedor_id:
+            prov = _get_entity("Provedor", provedor_id) or {}
+            if (prov.get("status") or "ativo") == "bloqueado":
+                return True
+    except Exception:
+        return False
+    return False
+
+
 def _pref_notifica(cliente_id, tipo):
     """Respeita PreferenciaAlerta do cliente (tipos/horario/dias/notificar_whatsapp).
     Sem preferencia (ou desativada) = notifica (comportamento padrao)."""
@@ -1865,6 +1976,10 @@ async def webhook(req: Request):
         tel = (_cli_ent.get("telefone") or _cli_ent.get("celular") or _cli_ent.get("whatsapp") or "").strip()
     provedor_id = cam.get("provedor_id", "")
     provedor_nome = cam.get("provedor_nome", "")
+    # trava: cliente/provedor bloqueado (inadimplencia/suspensao) NAO recebe alerta de IA
+    _cli_bloq = _cliente_bloqueado(cliente_id, provedor_id)
+    if _cli_bloq:
+        print("[alerta] cliente %s bloqueado -> nao notifica cliente/sub/push (plantao segue)" % (cliente_id or "-"))
 
     c = db()
     cur = c.execute(
@@ -1913,7 +2028,7 @@ async def webhook(req: Request):
                    + (f"\n📹 *Ver a camera ao vivo:*\n{_camlink}\n" if _camlink else "")
                    + (f"\n\U0001F3A5 *Video do ocorrido (40s antes):*\n{_clip_ocorrido}\n" if _clip_ocorrido else "") + "\n_Sistema Corexia de vigilancia._")
         # 1) CLIENTE final: so se a camera tem cliente c/ telefone E a PreferenciaAlerta permite
-        if tel and cliente_id and _pref_notifica(cliente_id, tipo):
+        if tel and cliente_id and not _cli_bloq and _pref_notifica(cliente_id, tipo):
             enviado = envia_whatsapp(tel, caption, img_b64, provedor_id)
             if enviado:
                 c = db(); c.execute("UPDATE alertas SET whatsapp=1 WHERE id=?", (aid,)); c.commit(); c.close()
@@ -1926,7 +2041,7 @@ async def webhook(req: Request):
         # 3) SUB-USUARIOS do cliente: so os que optaram (receber_alertas_whatsapp) e com a camera liberada
         try:
             _camid = b.get("camera_id", "")
-            for _su in _subusers_do_cliente(cliente_id):
+            for _su in ([] if _cli_bloq else _subusers_do_cliente(cliente_id)):
                 _stel = (_su.get("telefone") or "").strip()
                 if (_su.get("status") == "ativo" and _su.get("receber_alertas_whatsapp")
                         and _stel and _camid in (_su.get("allowed_cameras") or [])):
@@ -1958,14 +2073,14 @@ async def webhook(req: Request):
         if verificado:
             emoji = TIPO_EMOJI.get(tipo, "🔔"); lbl = TIPO_LABEL.get(tipo, "ALERTA DE SEGURANCA")
             alvo = "/alertas"   # admin/provedor caem na central; cliente e redirecionado pro portal no SW
-            n_push = _send_push(_push_users_do_alerta(cliente_id, provedor_id),
+            n_push = _send_push(_push_users_do_alerta("" if _cli_bloq else cliente_id, provedor_id),
                                 f"{emoji} {lbl}",
                                 f"{b.get('camera_nome','')} · {int(b.get('confianca', 0) or 0)}% de confianca",
                                 url=alvo, tag=f"cam-{b.get('camera_id','')}")
             if n_push:
                 print(f"[push] enviado a {n_push} dispositivo(s)")
             try:
-                n_app = _send_push_native(_push_users_do_alerta(cliente_id, provedor_id),
+                n_app = _send_push_native(_push_users_do_alerta("" if _cli_bloq else cliente_id, provedor_id),
                                           f"{emoji} {lbl}",
                                           f"{b.get('camera_nome','')} · {int(b.get('confianca', 0) or 0)}% de confianca",
                                           {"tipo": tipo, "camera_id": b.get('camera_id','')})
@@ -4748,6 +4863,14 @@ def portal_novo():
     p = os.path.join(WEB, "lite.html")
     if os.path.exists(p):
         return FileResponse(p, media_type="text/html", headers={"Cache-Control": "no-cache"})
+    return JSONResponse({"error": "indisponivel"}, status_code=404)
+
+
+@app.get("/privacidade")
+def privacidade():
+    p = os.path.join(WEB, "privacidade.html")
+    if os.path.exists(p):
+        return FileResponse(p, media_type="text/html")
     return JSONResponse({"error": "indisponivel"}, status_code=404)
 
 
