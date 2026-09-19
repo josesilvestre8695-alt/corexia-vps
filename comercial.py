@@ -401,7 +401,20 @@ def com_home(req: Request):
         '<a class="kpi" data-roles="%s" style="text-decoration:none;color:inherit" href="/comercial/%s">'
         '<div class="k">%s</div><div class="v" style="font-size:15px;color:var(--accent)">abrir &rarr;</div></a>'
         % (",".join(r), s, l) for s, l, _t, r in COMERCIAL_ITENS)
-    body = '<p style="color:var(--muted)">Console comercial - propostas, planos e cobranca.</p><div class="cards">%s</div>' % cards
+    body = (
+        '<div class="cards" style="margin-bottom:16px">'
+        '<div class="kpi"><div class="k">Convites enviados</div><div class="v" id="cc_env">-</div></div>'
+        '<div class="kpi"><div class="k">Viraram cadastro</div><div class="v" id="cc_conv" style="color:var(--ok)">-</div></div>'
+        '<div class="kpi"><div class="k">Conversao de convites</div><div class="v" id="cc_taxa" style="color:var(--accent)">-</div></div>'
+        '</div>'
+        '<p style="color:var(--muted)">Console comercial - propostas, planos e cobranca.</p>'
+        '<div class="cards">' + cards + '</div>'
+        '<script>(function(){function go(){if(typeof api!=="function"){return setTimeout(go,150);}'
+        'api("GET","/api/tester/convites").then(function(r){var s=(r&&r.resumo)||{};'
+        'var a=document.getElementById("cc_env");if(a)a.textContent=s.enviados||0;'
+        'var b=document.getElementById("cc_conv");if(b)b.textContent=s.convertidos||0;'
+        'var c=document.getElementById("cc_taxa");if(c)c.textContent=(s.taxa||0)+"%";}).catch(function(){});}go();})();</script>'
+    )
     return _shell("", "Comercial", body)
 
 
@@ -6366,6 +6379,7 @@ _PROV_CAMERAS_BODY = """
  <div id="modbox"></div>
  <div id="facialrow" style="display:none;margin:8px 0"><button class="act" style="color:var(--accent)" onclick="facialAbrir()">👤 Cadastrar / gerenciar rostos (Controle de Acesso)</button></div>
  <div id="a_placa_warn" style="display:none;color:var(--bad);font-size:12px;margin:6px 0">Obs: Placa/LPR so dispara em camera marcada como "de entrada" pela Corexia.</div>
+ <div id="a_cam4mp_warn" style="display:none;margin:8px 0;padding:11px 13px;background:rgba(249,115,22,.13);border:1px solid rgba(249,115,22,.55);border-radius:9px;color:var(--ink);font-size:12.5px;line-height:1.5">\U0001F4F7 <b>Recomendacao da Corexia:</b> para a IA <b>Piscina / Afogamento</b> e a IA <b>Anti-furto (ocultacao)</b>, use camera de <b>no minimo 4 MP (megapixels)</b> &mdash; marca <b>Hikvision</b> ou <b>Intelbras</b>. Resolucao/qualidade menor reduz muito a precisao dessas IAs.</div>
  <div style="color:var(--muted);font-size:12px;margin:6px 0 8px">Zona de intrusao / linha / mapa de calor / piscina precisam da area desenhada — salve a IA e depois clique em "zonas" no card da camera para desenhar voce mesmo.</div>
  <div id="drawrow" style="display:none;margin:6px 0 10px"><button type="button" class="btn-primary" onclick="drawFromIA()">✏️ Desenhar linha/zona nesta camera</button></div>
  <div style="color:var(--accent);font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;margin:12px 0 6px">Agenda por analitico (opcional)</div>
@@ -6561,8 +6575,9 @@ function onSub(k){ var mod=DATA.modulos.filter(function(m){return m.key===k})[0]
  computeCusto(); }
 function computeCusto(){ var t=0; DATA.modulos.forEach(function(mod){ var mc=$('m_'+mod.key); if(!mc||!mc.checked)return;
   if(mod.pacote){ if(mod.analiticos.some(function(a){var e=$('d_'+a[0]);return e&&e.checked;}))t+=mod.valor; } else t+=mod.valor; });
- $('a_custo').textContent=brl(t); var _mf=$('m_facial'),_fr=$('facialrow'); if(_fr)_fr.style.display=(_mf&&_mf.checked)?'block':'none'; var _ds=$('d_suspeito'),_sr=$('susp_dwell_row'); if(_sr)_sr.style.display=(_ds&&_ds.checked)?'block':'none'; try{updDrawBtn();}catch(e){} }
+ $('a_custo').textContent=brl(t); var _mf=$('m_facial'),_fr=$('facialrow'); if(_fr)_fr.style.display=(_mf&&_mf.checked)?'block':'none'; var _ds=$('d_suspeito'),_sr=$('susp_dwell_row'); if(_sr)_sr.style.display=(_ds&&_ds.checked)?'block':'none'; try{updDrawBtn();}catch(e){} try{updCam4mp();}catch(e){} }
 function updDrawBtn(){ var need=['d_intruso','d_linha','d_suspeito','m_heatmap','m_piscina','m_guarda_piscina'].some(function(id){var e=$(id);return e&&e.checked;}); var r=$('drawrow'); if(r)r.style.display=need?'block':'none'; }
+function updCam4mp(){ var need=(($('m_piscina')&&$('m_piscina').checked)||($('d_furto')&&$('d_furto').checked)); var w=$('a_cam4mp_warn'); if(w)w.style.display=need?'block':'none'; }
 function drawFromIA(){ var id=($('a_id')||{}).value; if(!id)return; $('ov').classList.remove('open'); try{ zonas(id); }catch(e){ return; } var m='zona'; if($('d_linha')&&$('d_linha').checked)m='linha'; else if($('d_intruso')&&$('d_intruso').checked)m='zona'; else if($('m_heatmap')&&$('m_heatmap').checked)m='heatmap'; else if(($('m_piscina')&&$('m_piscina').checked)||($('m_guarda_piscina')&&$('m_guarda_piscina').checked))m='agua'; else if($('d_suspeito')&&$('d_suspeito').checked)m='vigilancia'; try{ zMode(m); }catch(e){} }
 function _anaLabel(k){ var lab=k; (DATA.modulos||[]).forEach(function(m){ (m.analiticos||[]).forEach(function(a){ if(a[0]===k)lab=a[1]; }); }); return lab; }
 function selAnaliticos(){ var out=[]; (DATA.modulos||[]).forEach(function(mod){ var mc=$('m_'+mod.key); if(!mc||!mc.checked)return;
@@ -7269,6 +7284,13 @@ setInterval(function(){ if($('auto')&&$('auto').checked) load(); },20000);
 
 _TESTER_BODY = """
 <div id="msg" class="msg"></div>
+
+<div id="solbox" style="background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:12px;padding:18px;margin-bottom:22px;display:none">
+ <h2 style="margin:0 0 4px;font-size:17px">Solicitacoes da landing <span id="solcount" class="pill" style="background:var(--accent);color:#111">0</span></h2>
+ <p style="color:var(--muted);font-size:13px;margin:0 0 12px">Provedores que se cadastraram sozinhos em <b>/landing</b> e aguardam sua aprovacao. Ao aprovar, cria o tester (Cloud, 3 cameras, IA Corexia + a IA escolhida, 14 dias) e avisa o provedor no WhatsApp dele.</p>
+ <table><thead><tr><th>Provedor</th><th>WhatsApp</th><th>IA escolhida</th><th>Quando</th><th></th></tr></thead><tbody id="solrows"></tbody></table>
+</div>
+
 <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:22px">
  <h2 style="margin:0 0 12px;font-size:17px">Novo provedor de teste</h2>
  <p style="color:var(--muted);font-size:13px;margin:0 0 14px">Cria um provedor no plano <b>Cloud</b> com direito a ate 3 cameras (2 ao vivo + 1 com gravacao 1 dia) + IA Corexia, <b>sem cobranca</b> pelo periodo. Ao vencer, o painel bloqueia sozinho e voce reativa (entra na cobranca normal) ou exclui.</p>
@@ -7281,6 +7303,16 @@ _TESTER_BODY = """
   <button class="btn-primary" onclick="criar()" style="height:41px">Criar tester</button>
  </div>
 </div>
+<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:22px">
+ <h2 style="margin:0 0 6px;font-size:17px">📨 Convidar lead (WhatsApp)</h2>
+ <p style="color:var(--muted);font-size:13px;margin:0 0 12px">Dispara pro lead uma mensagem agradecendo o interesse na Corexia + o link da landing pra ele se cadastrar e criar o login de teste. Pode colocar <b>varios numeros</b> (um por linha ou separados por virgula).</p>
+ <div class="dfld"><label>WhatsApp(s) &mdash; 55 + DDD + numero (13 digitos cada)</label><textarea id="t_lead_wpp" rows="2" placeholder="5581997335544, 5581988887777" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:9px;color:var(--ink);padding:9px 11px;font-size:14px;resize:vertical"></textarea></div>
+ <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+  <div class="dfld" style="flex:1;min-width:200px;margin:0"><label>Nome (opcional)</label><input id="t_lead_nome" placeholder="Ex.: Joao"></div>
+  <button class="btn-primary" onclick="convidar()" style="height:41px">📨 Disparar convite</button>
+ </div>
+</div>
+<div id="convhist" style="margin:0 0 22px"></div>
 <h2 style="font-size:16px;margin:0 0 10px">Provedores em teste</h2>
 <table><thead><tr><th>Provedor</th><th>Trial ate</th><th>Cameras</th><th>Status</th><th></th></tr></thead><tbody id="rows"><tr><td colspan="5" class="center">carregando...</td></tr></tbody></table>
 <style>.dfld label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
@@ -7288,10 +7320,22 @@ _TESTER_BODY = """
 <script>
 window.PAGE_INIT=init;
 async function init(){
- loadList();
+ loadList(); loadSolic(); loadConvites();
  $('rows').addEventListener('click',function(e){ var b=e.target.closest('[data-act]'); if(!b)return;
   var act=b.getAttribute('data-act'), id=b.getAttribute('data-id'); if(act==='reativar')reativar(id); else if(act==='excluir')excluir(id); });
+ $('solrows').addEventListener('click',function(e){ var b=e.target.closest('[data-solact]'); if(!b)return;
+  var act=b.getAttribute('data-solact'), id=b.getAttribute('data-id'); if(act==='aprovar')aprovarSol(id); else if(act==='recusar')recusarSol(id); });
 }
+async function loadSolic(){ try{ var r=await api('GET','/api/tester/solicitacoes'); var L=(r&&r.solicitacoes)||[];
+ var pend=L.filter(function(s){return s.status==='pendente';});
+ $('solcount').textContent=pend.length; $('solbox').style.display=pend.length?'block':'none';
+ $('solrows').innerHTML=pend.map(function(s){
+  return '<tr><td><b>'+esc(s.nome||'-')+'</b><div style="color:var(--muted);font-size:12px">'+esc(s.email||'')+'</div></td><td>'+esc(s.telefone||'')+'</td><td>'+esc(s.ia_extra_nome||'-')+'</td><td style="color:var(--muted);font-size:12px">'+esc((s.criado||'').slice(0,16).replace('T',' '))+'</td><td style="text-align:right;white-space:nowrap"><button class="btn-primary" style="height:32px;padding:0 12px" data-solact="aprovar" data-id="'+esc(s.id)+'">aprovar</button> <button class="act" style="color:var(--bad)" data-solact="recusar" data-id="'+esc(s.id)+'">recusar</button></td></tr>';
+ }).join(''); }catch(e){ } }
+async function aprovarSol(id){ if(!confirm('Aprovar este cadastro? Cria o provedor tester (14 dias) e avisa ele no WhatsApp.'))return;
+ try{ var r=await api('POST','/api/tester/solicitacoes/'+id+'/aprovar'); msg('Aprovado! Trial ate '+esc(r.trial_ate)+'. WhatsApp de boas-vindas enviado.',true); loadSolic(); loadList(); }catch(e){ msg('Erro: '+e.message); } }
+async function recusarSol(id){ if(!confirm('Recusar / descartar este cadastro?'))return;
+ try{ await api('POST','/api/tester/solicitacoes/'+id+'/recusar'); msg('Solicitacao recusada.',true); loadSolic(); }catch(e){ msg('Erro: '+e.message); } }
 async function criar(){
  var b={nome:$('t_nome').value.trim(),email:$('t_email').value.trim(),password:$('t_senha').value,dias:parseInt($('t_dias').value||7)||7,telefone:$('t_tel').value.trim()};
  if(!b.nome||!b.email||!b.password){ msg('Preencha nome, email e senha.'); return; }
@@ -7308,6 +7352,22 @@ async function reativar(id){ if(!confirm('Reativar este provedor? Ele sai do tes
  try{ await api('POST','/api/tester/'+id+'/reativar'); msg('Reativado. Agora e provedor normal - cobre pela aba Provedor/Revenda.',true); loadList(); }catch(e){ msg('Erro: '+e.message); } }
 async function excluir(id){ if(!confirm('EXCLUIR este provedor de teste? Remove o painel, o login e as cameras dele. Irreversivel.'))return;
  try{ await api('DELETE','/api/tester/'+id); msg('Excluido.',true); loadList(); }catch(e){ msg('Erro: '+e.message); } }
+async function loadConvites(){ try{ var r=await api('GET','/api/tester/convites'); var L=(r&&r.convites)||[]; var el=$('convhist'); if(!el)return;
+ if(!el._bound){ el._bound=1; el.addEventListener('click',function(e){ var b=e.target.closest&&e.target.closest('[data-reenv]'); if(b) reenviar(b.getAttribute('data-reenv'), b.getAttribute('data-nm')||''); }); }
+ var rs=(r&&r.resumo)||{enviados:0,convertidos:0,taxa:0};
+ var head='<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:0 0 8px;font-size:12.5px;color:var(--muted)"><b style="color:var(--ink)">📊 Convites</b><span>'+rs.enviados+' enviados</span><span style="color:var(--ok)">'+rs.convertidos+' viraram cadastro</span><span>('+rs.taxa+'% de conversão)</span></div>';
+ if(!L.length){ el.innerHTML=head; return; }
+ var rows=L.slice(0,30).map(function(x){ var st=x.status==='enviado'?'<span class="pill ok">enviado</span>':'<span class="pill" style="color:var(--bad)">falha</span>'; var q=(x.criado||'').slice(0,16).replace('T',' '); var nm=x.nome?(' <span style="color:var(--muted)">('+esc(x.nome)+')</span>'):''; return '<tr><td style="color:var(--muted);font-size:12px;white-space:nowrap">'+esc(q)+'</td><td>'+esc(x.telefone||'')+nm+'</td><td>'+st+'</td><td style="text-align:right"><button class="act" style="color:var(--accent)" data-reenv="'+esc(x.telefone||'')+'" data-nm="'+esc(x.nome||'')+'">reenviar</button></td></tr>'; }).join('');
+ el.innerHTML=head+'<table><thead><tr><th>Quando</th><th>WhatsApp</th><th>Status</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
+ }catch(e){} }
+async function reenviar(tel, nm){ if(!tel)return; if(!confirm('Reenviar o convite para '+tel+'?'))return;
+ try{ var r=await api('POST','/api/tester/convite',{telefones:tel,nome:nm}); msg(r.enviados>0?('✅ Convite reenviado para '+tel):('Falha ao reenviar '+tel), r.enviados>0); loadConvites(); }catch(e){ msg('Erro: '+e.message); } }
+async function convidar(){ var w=$('t_lead_wpp').value.trim(), nome=$('t_lead_nome').value.trim();
+ if(!w){ msg('Informe ao menos 1 WhatsApp.'); return; }
+ try{ var r=await api('POST','/api/tester/convite',{telefones:w,nome:nome});
+  var t='✅ Convite enviado para '+r.enviados+' de '+r.total+' numero(s).'; if(r.falhas&&r.falhas.length){ t+=' Falhas: '+r.falhas.join('; '); }
+  msg(t, r.enviados>0); if(r.enviados>0){ $('t_lead_wpp').value=''; $('t_lead_nome').value=''; loadConvites(); }
+ }catch(e){ msg('Erro: '+e.message); } }
 </script>
 """
 

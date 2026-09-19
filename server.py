@@ -688,6 +688,258 @@ def _plano_cloud():
     return out
 
 
+# ==================== LANDING: auto-cadastro de provedor tester (com aprovacao) ====================
+_LANDING_IAS = {
+    "fogo": "IA Fogo / Fumaca", "veiculos": "IA Veiculos", "epi": "IA EPI",
+    "placa": "IA Placa / LPR", "heatmap": "IA Mapa de calor", "piscina": "IA Piscina / Afogamento",
+    "facial": "IA Controle de Acesso Facial", "guarda_piscina": "IA Guarda-Piscina",
+    "suspeito": "IA Detector de Suspeitos",
+}
+_landing_hits = {}   # anti-spam por IP
+
+
+def _admin_wa(texto):
+    """Avisa o plantao admin da Corexia (Z-API padrao)."""
+    try:
+        for n in _plantao_numeros("__corexia__"):
+            try:
+                envia_whatsapp(n, texto, None, None)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _landing_boasvindas(prov):
+    """WhatsApp de boas-vindas ao provedor recem-aprovado (Z-API padrao Corexia)."""
+    tel = (prov.get("telefone") or "").strip()
+    if not tel:
+        return
+    nome = ((prov.get("nome") or "").split(" ") or [""])[0] or "tudo pronto"
+    ia = prov.get("trial_ia_extra_nome") or "uma IA a sua escolha"
+    txt = (
+        "\U0001F680 *Bem-vindo ao mundo Corexia, %s!*\n\n"
+        "Seu acesso acaba de ser *LIBERADO*. A partir de agora suas cameras deixam de ser so olhos "
+        "e passam a *pensar por voce*: elas veem, entendem e avisam, em tempo real.\n\n"
+        "\u2705 Plano Cloud ativo \u2014 *14 dias gratis*\n"
+        "\U0001F4F9 Ate 3 cameras (2 ao vivo + 1 com gravacao)\n"
+        "\U0001F9E0 IA Corexia + %s\n\n"
+        "\U0001F449 Acesse agora: https://grupocorexia.com.br\n"
+        "\U0001F4E7 Login: %s\n\n"
+        "Prepare-se: seguranca que *antecipa*, nao so registra. Bem-vindo a uma nova era. \U0001F6E1\n\n"
+        "_Equipe Corexia_"
+    ) % (nome, ia, prov.get("email", ""))
+    try:
+        envia_whatsapp(tel, txt, None, None)
+    except Exception:
+        pass
+
+
+@app.get("/landing")
+def landing_page():
+    p = os.path.join(WEB, "landing.html")
+    if os.path.exists(p):
+        return FileResponse(p, media_type="text/html", headers={"Cache-Control": "no-cache"})
+    return JSONResponse({"error": "indisponivel"}, status_code=404)
+
+
+@app.post("/api/landing/tester")
+async def landing_tester(req: Request):
+    ip = req.client.host if req.client else "?"
+    now = time.time()
+    hits = [t for t in _landing_hits.get(ip, []) if now - t < 3600]
+    if len(hits) >= 5:
+        return JSONResponse({"error": "muitos cadastros deste dispositivo. Tente mais tarde."}, status_code=429)
+    b = await req.json()
+    nome = (b.get("nome") or "").strip()
+    email = (b.get("email") or "").strip().lower()
+    pw = b.get("password") or ""
+    tel = "".join(ch for ch in (b.get("telefone") or "") if ch.isdigit())
+    ia = (b.get("ia_extra") or "").strip()
+    if not nome or not email or len(pw) < 4:
+        return JSONResponse({"error": "preencha nome, email e senha (min 4)."}, status_code=400)
+    if len(tel) != 13 or not tel.startswith("55"):
+        return JSONResponse({"error": "WhatsApp invalido: use 55 + DDD + numero (13 digitos)."}, status_code=400)
+    if ia not in _LANDING_IAS:
+        return JSONResponse({"error": "escolha uma IA valida."}, status_code=400)
+    c = db()
+    if c.execute("SELECT 1 FROM users WHERE email=?", (email,)).fetchone():
+        c.close(); return JSONResponse({"error": "este e-mail ja tem conta. Faca login ou use outro e-mail."}, status_code=409)
+    pend = c.execute("SELECT id FROM entities WHERE entity='SolicitacaoTester' "
+                     "AND json_extract(data,'$.email')=? AND json_extract(data,'$.status')='pendente' LIMIT 1", (email,)).fetchone()
+    if pend:
+        c.close(); return JSONResponse({"error": "ja recebemos um cadastro com este e-mail. Aguarde a aprovacao."}, status_code=409)
+    sid = secrets.token_hex(12); nowi = _now_iso()
+    data = {"nome": nome, "email": email, "telefone": tel, "password_hash": _hash_pw(pw),
+            "ia_extra": ia, "ia_extra_nome": _LANDING_IAS[ia], "status": "pendente",
+            "origem": "landing", "ip": ip, "criado": nowi}
+    c.execute("INSERT INTO entities (entity,id,data,created_date,updated_date) VALUES (?,?,?,?,?)",
+              ("SolicitacaoTester", sid, json.dumps(data), nowi, nowi))
+    c.commit(); c.close()
+    hits.append(now); _landing_hits[ip] = hits
+    _admin_wa("\U0001F7E0 *NOVO CADASTRO NA LANDING*\n\n%s (%s) quer testar a Corexia.\nIA escolhida: %s\nWhatsApp: %s\n\nAprove no painel: Provedor/Revenda Tester." % (nome, email, _LANDING_IAS[ia], tel))
+    return {"success": True}
+
+
+@app.get("/api/tester/solicitacoes")
+async def tester_solicitacoes(req: Request):
+    u = current_user(req)
+    if not (u and u["role"] == "admin"):
+        return _forbidden()
+    c = db()
+    rows = c.execute("SELECT id, data FROM entities WHERE entity='SolicitacaoTester'").fetchall()
+    c.close()
+    out = []
+    for r in rows:
+        d = json.loads(r["data"])
+        out.append({"id": r["id"], "nome": d.get("nome"), "email": d.get("email"),
+                    "telefone": d.get("telefone"), "ia_extra": d.get("ia_extra"),
+                    "ia_extra_nome": d.get("ia_extra_nome"), "status": d.get("status"),
+                    "criado": d.get("criado"), "provedor_id": d.get("provedor_id")})
+    out.sort(key=lambda x: x.get("criado") or "", reverse=True)
+    return {"solicitacoes": out}
+
+
+@app.post("/api/tester/solicitacoes/{sid}/aprovar")
+async def tester_solicitacao_aprovar(sid: str, req: Request):
+    u = current_user(req)
+    if not (u and u["role"] == "admin"):
+        return _forbidden()
+    c = db()
+    r = c.execute("SELECT data FROM entities WHERE entity='SolicitacaoTester' AND id=?", (sid,)).fetchone()
+    if not r:
+        c.close(); return JSONResponse({"error": "nao encontrado"}, status_code=404)
+    d = json.loads(r["data"])
+    if d.get("status") == "aprovado" and d.get("provedor_id"):
+        c.close(); return JSONResponse({"error": "ja aprovado"}, status_code=409)
+    email = (d.get("email") or "").strip().lower()
+    if c.execute("SELECT 1 FROM users WHERE email=?", (email,)).fetchone():
+        c.close(); return JSONResponse({"error": "e-mail ja tem conta (verifique manualmente)."}, status_code=409)
+    plano_id, plano_nome = _plano_cloud()
+    trial_ate = (datetime.now() + timedelta(days=14)).strftime("%Y-%m-%d")
+    pid = secrets.token_hex(12); nowi = _now_iso()
+    prov = {"nome": d.get("nome", ""), "email": email, "telefone": d.get("telefone", ""),
+            "plano_id": plano_id, "plano_nome": plano_nome, "gravacao": "cloud",
+            "status": "ativo", "tester": True, "trial_ate": trial_ate, "limite_cameras": 3,
+            "trial_ia_extra": d.get("ia_extra"), "trial_ia_extra_nome": d.get("ia_extra_nome"),
+            "origem": "landing", "criado_em": nowi}
+    uid = secrets.token_hex(8)
+    try:
+        c.execute("INSERT INTO users (id,email,password_hash,full_name,role,provedor_id,cliente_id,status,created) "
+                  "VALUES (?,?,?,?,?,?,?,?,?)",
+                  (uid, email, d.get("password_hash") or "", d.get("nome", ""), "provedor", pid, "", "ativo", nowi))
+    except sqlite3.IntegrityError:
+        c.close(); return JSONResponse({"error": "email ja cadastrado"}, status_code=409)
+    c.execute("INSERT INTO entities (entity,id,data,created_date,updated_date) VALUES (?,?,?,?,?)",
+              ("Provedor", pid, json.dumps(prov), nowi, nowi))
+    d["status"] = "aprovado"; d["provedor_id"] = pid; d["aprovado_por"] = (u.get("email") or "admin"); d["aprovado_em"] = nowi
+    c.execute("UPDATE entities SET data=?, updated_date=? WHERE entity='SolicitacaoTester' AND id=?", (json.dumps(d), nowi, sid))
+    c.commit(); c.close()
+    _landing_boasvindas(prov)
+    return {"success": True, "provedor_id": pid, "trial_ate": trial_ate}
+
+
+@app.post("/api/tester/solicitacoes/{sid}/recusar")
+async def tester_solicitacao_recusar(sid: str, req: Request):
+    u = current_user(req)
+    if not (u and u["role"] == "admin"):
+        return _forbidden()
+    c = db()
+    r = c.execute("SELECT data FROM entities WHERE entity='SolicitacaoTester' AND id=?", (sid,)).fetchone()
+    if not r:
+        c.close(); return JSONResponse({"error": "nao encontrado"}, status_code=404)
+    d = json.loads(r["data"])
+    if d.get("status") == "aprovado":
+        c.close(); return JSONResponse({"error": "ja aprovado, nao da pra recusar"}, status_code=409)
+    d["status"] = "recusado"; d["recusado_em"] = _now_iso()
+    c.execute("UPDATE entities SET data=?, updated_date=? WHERE entity='SolicitacaoTester' AND id=?", (json.dumps(d), _now_iso(), sid))
+    c.commit(); c.close()
+    return {"success": True}
+
+
+@app.post("/api/tester/convite")
+async def tester_convite(req: Request):
+    u = current_user(req)
+    if not (u and u["role"] == "admin"):
+        return _forbidden()
+    b = await req.json()
+    nome = (b.get("nome") or "").strip()
+    raw = str(b.get("telefones") or b.get("telefone") or "")
+    parts = raw.replace(";", ",").replace("\n", ",").split(",")
+    nums = []
+    for p in parts:
+        dd = "".join(ch for ch in p if ch.isdigit())
+        if dd and dd not in nums:
+            nums.append(dd)
+    if not nums:
+        return JSONResponse({"error": "informe ao menos 1 WhatsApp"}, status_code=400)
+    saud = ("Ola, %s!" % nome) if nome else "Ola!"
+    link = "https://grupocorexia.com.br/landing"
+    msg_tpl = ("\U0001F680 *%s Aqui e da Corexia.*\n\n"
+               "Muito obrigado pelo seu interesse em conhecer a *revolucao da Corexia* - "
+               "cameras que nao so gravam: elas *veem, entendem e avisam* em tempo real.\n\n"
+               "Preparamos um *acesso de teste GRATIS* pra voce sentir na pratica, sem cartao e sem compromisso.\n\n"
+               "\U0001F449 *Cadastre-se aqui e crie o seu login de teste:*\n%s\n\n"
+               "E so preencher, escolher as suas IAs e o painel de teste e liberado pra voce. "
+               "Qualquer duvida, e so chamar aqui. Bem-vindo ao mundo Corexia! \U0001F6E1") % (saud, link)
+    ok_n = 0; fail = []; recs = []
+    for n in nums:
+        if len(n) != 13:
+            fail.append(n + " (precisa de 13 digitos)"); recs.append((n, "falha", "nao tem 13 digitos")); continue
+        try:
+            if envia_whatsapp(n, msg_tpl, None, None):
+                ok_n += 1; recs.append((n, "enviado", ""))
+            else:
+                fail.append(n + " (falha no envio)"); recs.append((n, "falha", "falha no envio"))
+        except Exception:
+            fail.append(n + " (erro)"); recs.append((n, "falha", "erro"))
+    try:
+        _c = db(); _nowi = _now_iso()
+        for (_tel, _st, _mot) in recs:
+            _eid = secrets.token_hex(12)
+            _c.execute("INSERT INTO entities (entity,id,data,created_date,updated_date) VALUES (?,?,?,?,?)",
+                       ("ConviteLead", _eid, json.dumps({"telefone": _tel, "nome": nome, "status": _st, "motivo": _mot, "por": (u.get("email") or "admin"), "criado": _nowi}), _nowi, _nowi))
+        _c.commit(); _c.close()
+    except Exception as _e:
+        print("[convite] erro salvando historico:", _e)
+    return {"success": True, "enviados": ok_n, "total": len(nums), "falhas": fail}
+
+
+@app.get("/api/tester/convites")
+async def tester_convites(req: Request):
+    u = current_user(req)
+    if not (u and u["role"] == "admin"):
+        return _forbidden()
+    _c = db()
+    _rows = _c.execute("SELECT id, data FROM entities WHERE entity='ConviteLead'").fetchall()
+    _sol = _c.execute("SELECT data FROM entities WHERE entity='SolicitacaoTester'").fetchall()
+    _prov = _c.execute("SELECT data FROM entities WHERE entity='Provedor'").fetchall()
+    _c.close()
+    def _dig(v):
+        return "".join(ch for ch in str(v or "") if ch.isdigit())
+    out = []
+    convidados = set()
+    for _r in _rows:
+        _d = json.loads(_r["data"])
+        out.append({"telefone": _d.get("telefone"), "nome": _d.get("nome"), "status": _d.get("status"), "motivo": _d.get("motivo"), "criado": _d.get("criado")})
+        if _d.get("status") == "enviado":
+            _t = _dig(_d.get("telefone"))
+            if len(_t) >= 10:
+                convidados.add(_t)
+    cadastrados = set()
+    for _s in _sol:
+        cadastrados.add(_dig(json.loads(_s["data"]).get("telefone")))
+    for _p in _prov:
+        _pd = json.loads(_p["data"])
+        if _pd.get("tester"):
+            cadastrados.add(_dig(_pd.get("telefone")))
+    conv = len(convidados & cadastrados)
+    tot = len(convidados)
+    taxa = int(round(conv * 100.0 / tot)) if tot else 0
+    out.sort(key=lambda x: x.get("criado") or "", reverse=True)
+    return {"convites": out[:100], "resumo": {"enviados": tot, "convertidos": conv, "taxa": taxa}}
+
+
 @app.post("/api/tester/criar")
 async def tester_criar(req: Request):
     u = current_user(req)
